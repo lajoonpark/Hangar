@@ -85,7 +85,7 @@ export function RepoTile({ tile, indexStatus, onSelect, compact }: TileProps): R
       title={`${tile.name}\n${tile.path}`}
       onClick={(e) => onSelect(tile, e.metaKey || e.ctrlKey)}
       className={[
-        'group relative flex flex-col rounded-xl border p-3.5 text-left shadow-tile transition-all',
+        'group relative flex min-w-0 flex-col rounded-xl border p-3.5 text-left shadow-tile transition-all',
         'border-zinc-200 bg-white hover:-translate-y-0.5 hover:border-accent/60 hover:shadow-tile-hover',
         'dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-accent/50 dark:hover:bg-zinc-800/80'
       ].join(' ')}
@@ -99,14 +99,14 @@ export function RepoTile({ tile, indexStatus, onSelect, compact }: TileProps): R
         </span>
       </div>
 
-      <span className="mt-3 block truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+      <span className="mt-3 block min-w-0 truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">
         {tile.name}
       </span>
-      <span className="mt-0.5 block truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+      <span className="mt-0.5 block min-w-0 truncate text-[11px] text-zinc-400 dark:text-zinc-500">
         {tile.path}
       </span>
 
-      <span className="mt-2.5 flex items-center gap-1.5 text-[10px] text-zinc-400 dark:text-zinc-500">
+      <span className="mt-2.5 flex min-w-0 items-center gap-1.5 text-[10px] text-zinc-400 dark:text-zinc-500">
         {opened ? (
           <>
             <Clock size={10} />
