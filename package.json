@@ -1,6 +1,6 @@
 {
   "name": "hangar",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Repo terminal launcher for coding agents",
   "main": "./out/main/index.js",
   "author": "Hangar",
