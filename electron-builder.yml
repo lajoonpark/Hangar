@@ -1,0 +1,25 @@
+appId: com.hangar.app
+productName: Hangar
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**
+  - package.json
+asarUnpack:
+  - '**/node_modules/node-pty/**'
+  - '**/node_modules/@lancedb/**'
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+  identity: null
+win:
+  target:
+    - nsis
+linux:
+  target:
+    - AppImage
+  category: Development
+npmRebuild: true
+nodeGypRebuild: false

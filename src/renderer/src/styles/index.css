@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base ──────────────────────────────────────────────────────────────── */
+
+:root {
+  color-scheme: light dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  @apply bg-zinc-100 font-sans text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
+  user-select: none;
+  cursor: default;
+}
+
+/* Regions that allow text selection (terminal, inputs, snippets) */
+.selectable,
+.selectable * {
+  user-select: text;
+  cursor: auto;
+}
+
+input,
+textarea {
+  user-select: text;
+  cursor: auto;
+}
+
+/* ── Scrollbars ────────────────────────────────────────────────────────── */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(113 113 122 / 0.4) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-zinc-400/40 hover:bg-zinc-400/60 dark:bg-zinc-600/50 dark:hover:bg-zinc-500/70;
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+/* ── xterm container ───────────────────────────────────────────────────── */
+
+.xterm-screen {
+  @apply selectable;
+}
+
+.xterm .xterm-viewport {
+  /* Keep xterm's own scrollbar subtle */
+  background-color: transparent !important;
+}
+
+/* ── Draggable titlebar region ─────────────────────────────────────────── */
+
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* ── Native-like select ────────────────────────────────────────────────── */
+
+select {
+  @apply selectable;
+}
