@@ -140,8 +140,14 @@ class PtyManager extends EventEmitter {
     if (process.platform === 'win32') {
       return ['powershell.exe', ['-NoLogo', '-Command']]
     }
+    // Login + interactive so the user's real environment (PATH from
+    // /etc/paths.d via path_helper, plus ~/.zshrc / ~/.zprofile) is loaded.
+    // When launched as a GUI app (Finder/Dock), the process only inherits the
+    // minimal launchd PATH (/usr/bin:/bin:/usr/sbin:/sbin); a plain `-c`
+    // shell then cannot find agent binaries in /opt/homebrew/bin, ~/.local/bin,
+    // nvm, etc. — which made every agent PTY exit instantly with code 127.
     const shell = process.env.SHELL && existsInPath(process.env.SHELL) ? process.env.SHELL : '/bin/bash'
-    return [shell, ['-c']]
+    return [shell, ['-lic']]
   }
 
   /** Keystrokes from the renderer. */
