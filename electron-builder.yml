@@ -9,11 +9,16 @@ files:
 asarUnpack:
   - '**/node_modules/node-pty/**'
   - '**/node_modules/@lancedb/**'
+artifactName: ${productName}-${version}-mac-${arch}.${ext}
 mac:
   category: public.app-category.developer-tools
   target:
-    - dmg
+    - target: dmg
+      arch:
+        - arm64
   identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
 win:
   target:
     - nsis
