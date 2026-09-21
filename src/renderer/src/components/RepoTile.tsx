@@ -114,10 +114,10 @@ export function RepoTile({
         </span>
       </div>
 
-      <span className="mt-3 block min-w-0 truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+      <span className="mt-3 block min-w-0 break-words text-sm font-semibold leading-snug text-zinc-800 [overflow-wrap:anywhere] dark:text-zinc-100">
         {tile.name}
       </span>
-      <span className="mt-0.5 block min-w-0 truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+      <span className="mt-0.5 block min-w-0 break-words text-[11px] leading-snug text-zinc-400 [overflow-wrap:anywhere] dark:text-zinc-500">
         {tile.path}
       </span>
 
