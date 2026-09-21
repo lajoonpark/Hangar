@@ -8,8 +8,25 @@ import { relativeTime } from './ui'
  * repo's LanceDB index state; click anywhere to open the agent picker.
  */
 
-export function IndexDot({ status }: { status?: RepoIndexStatus }): React.ReactElement | null {
-  if (!status) return null
+export function IndexDot({
+  status,
+  open
+}: {
+  status?: RepoIndexStatus
+  /** Repo currently has at least one open session in this window */
+  open?: boolean
+}): React.ReactElement | null {
+  // The emerald tick means "currently open": it must appear when a tab
+  // is open for this repo and disappear as soon as the last one closes.
+  // It is deliberately NOT coupled to the index's ready state, which is
+  // persistent on disk and would otherwise leave a stale tick behind.
+  const openTick = open ? (
+    <span title="Currently open" className="inline-flex">
+      <Check size={11} className="text-emerald-500" strokeWidth={3} />
+    </span>
+  ) : null
+
+  if (!status) return openTick
   switch (status.state) {
     case 'indexing':
     case 'queued':
@@ -18,17 +35,8 @@ export function IndexDot({ status }: { status?: RepoIndexStatus }): React.ReactE
           <Loader2 size={11} className="animate-spin text-accent" />
         </span>
       )
-    case 'ready': {
-      const tip =
-        status.files > 0
-          ? `Indexed · ${status.files} files · ${status.chunks} chunks`
-          : 'Indexed'
-      return (
-        <span title={tip} className="inline-flex">
-          <Check size={11} className="text-emerald-500" strokeWidth={3} />
-        </span>
-      )
-    }
+    case 'ready':
+      return openTick
     case 'error':
       return (
         <span
@@ -39,18 +47,25 @@ export function IndexDot({ status }: { status?: RepoIndexStatus }): React.ReactE
         </span>
       )
     default:
-      return null
+      return openTick
   }
 }
 
 interface TileProps {
   tile: RepoTile
   indexStatus?: RepoIndexStatus
+  isOpen?: boolean
   onSelect(tile: RepoTile, openInWindow: boolean): void
   compact?: boolean
 }
 
-export function RepoTile({ tile, indexStatus, onSelect, compact }: TileProps): React.ReactElement {
+export function RepoTile({
+  tile,
+  indexStatus,
+  isOpen,
+  onSelect,
+  compact
+}: TileProps): React.ReactElement {
   const opened = relativeTime(tile.lastOpenedAt)
 
   if (compact) {
@@ -74,7 +89,7 @@ export function RepoTile({ tile, indexStatus, onSelect, compact }: TileProps): R
             </span>
           )}
         </span>
-        <IndexDot status={indexStatus} />
+        <IndexDot status={indexStatus} open={isOpen} />
       </button>
     )
   }
@@ -95,7 +110,7 @@ export function RepoTile({ tile, indexStatus, onSelect, compact }: TileProps): R
           <Folder size={17} strokeWidth={2} />
         </span>
         <span className="flex items-center gap-1.5 pt-1">
-          <IndexDot status={indexStatus} />
+          <IndexDot status={indexStatus} open={isOpen} />
         </span>
       </div>
 

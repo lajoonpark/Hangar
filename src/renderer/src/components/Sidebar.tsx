@@ -1,4 +1,5 @@
 import { PanelLeftClose, Plus, RefreshCw } from 'lucide-react'
+import { useMemo } from 'react'
 import type { RepoTile as RepoTileData } from '@shared/types'
 import { useAppActions, useAppState } from '@renderer/state/AppProvider'
 import { Button, IconButton, Segmented } from './ui'
@@ -18,10 +19,12 @@ export function Sidebar({
   onToggle(): void
   onSelect(tile: RepoTileData, openInWindow: boolean): void
 }): React.ReactElement {
-  const { tiles, indexStatuses, scanning, settings, roots } = useAppState()
+  const { tiles, indexStatuses, scanning, settings, roots, sessions } = useAppState()
   const { addFolders, updateSettings } = useAppActions()
   const [filtered, query, setQuery] = useTileFilter(tiles)
   const isScanning = Object.keys(scanning).length > 0
+  // Repos that currently have at least one open session → green "open" tick
+  const openIds = useMemo(() => new Set(sessions.map((s) => s.repoTileId)), [sessions])
 
   if (collapsed) {
     return (
@@ -96,6 +99,7 @@ export function Sidebar({
                   key={tile.id}
                   tile={tile}
                   indexStatus={indexStatuses[tile.id]}
+                  isOpen={openIds.has(tile.id)}
                   onSelect={onSelect}
                   compact
                 />

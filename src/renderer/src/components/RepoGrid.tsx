@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { FolderSearch, RefreshCw, Warehouse } from 'lucide-react'
 import type { RepoIndexStatus, RepoTile } from '@shared/types'
-import { useAppActions } from '@renderer/state/AppProvider'
+import { useAppActions, useAppState } from '@renderer/state/AppProvider'
 import { Button, inputClass } from './ui'
 import { RepoTile as RepoTileCard } from './RepoTile'
 
@@ -39,6 +39,9 @@ export function RepoGrid({
 }: GridProps): React.ReactElement {
   const [filtered, query, setQuery] = useTileFilter(tiles)
   const { rescanAll } = useAppActions()
+  const { sessions } = useAppState()
+  // Repos that currently have at least one open session → green "open" tick
+  const openIds = useMemo(() => new Set(sessions.map((s) => s.repoTileId)), [sessions])
 
   if (tiles.length === 0) {
     return <NoRepos scanning={scanning} onRescan={() => void rescanAll()} />
@@ -71,6 +74,7 @@ export function RepoGrid({
               key={tile.id}
               tile={tile}
               indexStatus={indexStatuses[tile.id]}
+              isOpen={openIds.has(tile.id)}
               onSelect={onSelect}
               compact
             />
@@ -79,7 +83,13 @@ export function RepoGrid({
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-3">
           {filtered.map((tile) => (
-            <RepoTileCard key={tile.id} tile={tile} indexStatus={indexStatuses[tile.id]} onSelect={onSelect} />
+            <RepoTileCard
+              key={tile.id}
+              tile={tile}
+              indexStatus={indexStatuses[tile.id]}
+              isOpen={openIds.has(tile.id)}
+              onSelect={onSelect}
+            />
           ))}
         </div>
       )}
