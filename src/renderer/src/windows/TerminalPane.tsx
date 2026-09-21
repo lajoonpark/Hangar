@@ -9,7 +9,7 @@ import { TerminalView } from '@renderer/components/Terminal'
  * plus the "process exited" overlay for dead sessions.
  */
 export function TerminalPane({ activeId, dark }: { activeId: string | null; dark: boolean }): React.ReactElement {
-  const { settings, sessions, exits, bootStates, agents, tiles } = useAppState()
+  const { settings, sessions, exits, bootStates, painted, agents, tiles } = useAppState()
   const { closeTab, spawnTerminal } = useAppActions()
   const [reopening, setReopening] = useState<string | null>(null)
 
@@ -19,11 +19,16 @@ export function TerminalPane({ activeId, dark }: { activeId: string | null; dark
     ? active.customTitle?.trim() || active.title
     : 'Session'
   const activeBoot = active ? bootStates[active.id] : undefined
+  const activePainted = active ? !!painted[active.id] : false
   const activeAgentLabel = active
     ? (agents.find((a) => a.id === active.agentId)?.name ?? active.agentId)
     : ''
+  // Keep the overlay up until xterm confirms real content is on screen: main's
+  // 'ready' only means "first byte arrived", which can fire seconds before a
+  // TUI (e.g. kilo) actually paints anything.
   const showBootOverlay =
-    !!active && !exits[active.id] && (activeBoot === 'booting' || activeBoot === 'stalled')
+    !!active && !exits[active.id] && !activePainted &&
+    (activeBoot === 'booting' || activeBoot === 'stalled' || activeBoot === 'ready')
 
   return (
     <div className="relative min-h-0 flex-1 bg-white dark:bg-[#0c0c0f]">
@@ -40,7 +45,9 @@ export function TerminalPane({ activeId, dark }: { activeId: string | null; dark
 
       {showBootOverlay && active && (
         <BootOverlay
-          state={activeBoot === 'stalled' ? 'stalled' : 'booting'}
+          state={
+            activeBoot === 'stalled' ? 'stalled' : activeBoot === 'ready' ? 'rendering' : 'booting'
+          }
           agentLabel={activeAgentLabel}
           startedAt={active.createdAt}
         />

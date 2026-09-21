@@ -18,7 +18,7 @@ export function TerminalWindow({
   sessionId: string
   windowId: string
 }): React.ReactElement {
-  const { settings, exits, bootStates, agents } = useAppState()
+  const { settings, exits, bootStates, painted, agents } = useAppState()
   const { killTerminal, noteSessionStatus } = useAppActions()
   const dark = useResolvedTheme(settings)
   const [info, setInfo] = useState<TerminalSessionInfo | null>(null)
@@ -56,9 +56,14 @@ export function TerminalWindow({
   // broadcast fired before we attached); fall back to the session's own
   // status snapshot, then 'booting'.
   const bootState = bootStates[sessionId] ?? info?.status ?? 'booting'
+  const sessionPainted = !!painted[sessionId]
   const agentLabel = agents.find((a) => a.id === (info?.agentId ?? ''))?.name ?? info?.agentId ?? 'agent'
+  // Keep the overlay up until xterm confirms real content is on screen: main's
+  // 'ready' only means "first byte arrived", which can fire seconds before a
+  // TUI (e.g. kilo) actually paints anything.
   const showBootOverlay =
-    !!info && !exit && (bootState === 'booting' || bootState === 'stalled')
+    !!info && !exit && !sessionPainted &&
+    (bootState === 'booting' || bootState === 'stalled' || bootState === 'ready')
 
   const session: TerminalSessionInfo =
     info ?? {
@@ -110,7 +115,9 @@ export function TerminalWindow({
         )}
         {showBootOverlay && (
           <BootOverlay
-            state={bootState === 'stalled' ? 'stalled' : 'booting'}
+            state={
+              bootState === 'stalled' ? 'stalled' : bootState === 'ready' ? 'rendering' : 'booting'
+            }
             agentLabel={agentLabel}
             startedAt={session.createdAt}
           />

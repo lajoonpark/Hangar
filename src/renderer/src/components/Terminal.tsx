@@ -74,7 +74,7 @@ export function TerminalView({
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
-  const { drainOutput } = useAppActions()
+  const { drainOutput, noteSessionPainted } = useAppActions()
   const onExitRef = useRef(onExit)
   onExitRef.current = onExit
 
@@ -103,12 +103,45 @@ export function TerminalView({
     const replay = drainOutput(session.id)
     if (replay) term.write(replay)
 
+    // ── Boot-overlay dismissal ───────────────────────────────────────────
+    // Keep the "starting…" pill up until this session has actually painted
+    // visible content on screen. Main's 'ready' status fires on the first
+    // byte of PTY output, which is often pure escape sequences (alt-screen
+    // enter, clear) that arrive seconds before a TUI like kilo paints any
+    // glyphs — gating on real content avoids dropping the spinner onto a
+    // blank terminal. We check the visible buffer rows after every parsed
+    // write plus a light poll as a safety net, stopping at the first
+    // non-blank line.
+    let painted = false
+    let poll: number | undefined
+    const checkPainted = (): void => {
+      if (painted) return
+      const buff = term.buffer.active
+      const start = Math.max(0, buff.length - term.rows)
+      for (let y = start; y < buff.length; y++) {
+        const line = buff.getLine(y)
+        if (!line || line.isWrapped) continue
+        if (line.translateToString(true).trim().length > 0) {
+          painted = true
+          if (poll !== undefined) clearInterval(poll)
+          noteSessionPainted(session.id)
+          return
+        }
+      }
+    }
+    poll = window.setInterval(checkPainted, 150)
+    checkPainted()
+    const parsedOff = term.onWriteParsed(checkPainted)
+
     const offs = [
       window.hangar.onTerminalData(({ sessionId, data }) => {
         if (sessionId === session.id) term.write(data)
       }),
       window.hangar.onTerminalExit(({ sessionId, exitCode }) => {
-        if (sessionId === session.id) onExitRef.current?.(exitCode)
+        if (sessionId === session.id) {
+          if (poll !== undefined) clearInterval(poll)
+          onExitRef.current?.(exitCode)
+        }
       }),
       term.onData((data) => window.hangar.terminalInput(session.id, data))
     ]
@@ -150,6 +183,8 @@ export function TerminalView({
 
     return () => {
       offs.forEach((off) => (typeof off === 'function' ? off() : off.dispose()))
+      if (poll !== undefined) clearInterval(poll)
+      parsedOff.dispose()
       ro.disconnect()
       term.dispose()
       if (termRef.current === term) termRef.current = null

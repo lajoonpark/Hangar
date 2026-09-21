@@ -51,6 +51,15 @@ export interface AppState {
    * prints its first output. Absent = unknown (e.g. exited before any event).
    */
   bootStates: Record<string, TerminalBootState>
+  /**
+   * sessionId → true once xterm has painted visible content for that session.
+   * This is what actually dismisses the boot overlay: main's 'ready' status
+   * fires on the FIRST byte of output, which is often pure escape sequences
+   * (alt-screen enter, clear) arriving seconds before a TUI like kilo paints
+   * any glyphs. Keeping the overlay up until real content is on screen avoids
+   * dropping the spinner onto a blank terminal for a couple of seconds.
+   */
+  painted: Record<string, boolean>
 }
 
 type Action =
@@ -70,6 +79,7 @@ type Action =
   | { type: 'sessionRename'; sessionId: string; title: string }
   | { type: 'sessionStatus'; sessionId: string; status: TerminalBootState }
   | { type: 'sessionRemove'; sessionId: string }
+  | { type: 'sessionPainted'; sessionId: string }
 
 const initialState: AppState = {
   ready: false,
@@ -81,7 +91,8 @@ const initialState: AppState = {
   scanning: {},
   sessions: [],
   exits: {},
-  bootStates: {}
+  bootStates: {},
+  painted: {}
 }
 
 function reducer(state: AppState, action: Action): AppState {
@@ -151,9 +162,12 @@ function reducer(state: AppState, action: Action): AppState {
       {
         const bootStates = { ...state.bootStates }
         delete bootStates[action.sessionId]
+        const painted = { ...state.painted }
+        delete painted[action.sessionId]
         return {
           ...state,
           bootStates,
+          painted,
           exits: {
             ...state.exits,
             [action.sessionId]: { exitCode: action.exitCode, signal: action.signal }
@@ -190,13 +204,22 @@ function reducer(state: AppState, action: Action): AppState {
       delete exits[action.sessionId]
       const bootStates = { ...state.bootStates }
       delete bootStates[action.sessionId]
+      const painted = { ...state.painted }
+      delete painted[action.sessionId]
       return {
         ...state,
         sessions: state.sessions.filter((s) => s.id !== action.sessionId),
         exits,
-        bootStates
+        bootStates,
+        painted
       }
     }
+    case 'sessionPainted':
+      if (state.painted[action.sessionId]) return state
+      return {
+        ...state,
+        painted: { ...state.painted, [action.sessionId]: true }
+      }
     default:
       return state
   }
@@ -267,6 +290,12 @@ export interface AppActions {
    * attach (their spawn happened before this window subscribed to events).
    */
   noteSessionStatus(sessionId: string, status: TerminalBootState): void
+  /**
+   * Confirm that xterm has painted visible content for a session. Set by the
+   * TerminalView once its buffer shows non-blank glyphs; the boot overlay
+   * stays up until this fires (even after main reports 'ready').
+   */
+  noteSessionPainted(sessionId: string): void
   /** PTY output buffered before the terminal mounted. */
   drainOutput(sessionId: string): string
 }
@@ -479,6 +508,9 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
       },
       noteSessionStatus(sessionId, status) {
         dispatch({ type: 'sessionStatus', sessionId, status })
+      },
+      noteSessionPainted(sessionId) {
+        dispatch({ type: 'sessionPainted', sessionId })
       },
       drainOutput(sessionId) {
         return buffer.current.drain(sessionId)
