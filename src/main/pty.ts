@@ -56,7 +56,8 @@ class PtyManager extends EventEmitter {
     const cwd = agent.workingDirOverride || tile?.path || os.homedir()
 
     const sessionId = randomUUID()
-    const title = `${agent.name} @ ${path.basename(cwd)}`
+    // Default tab name: <agent label>_<repo>, e.g. K_hangar (kilo on hangar).
+    const title = `${agent.tabLabel}_${path.basename(cwd)}`
 
     const pty = this.spawnPty(agent, cwd)
 

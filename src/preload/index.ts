@@ -80,6 +80,8 @@ const api: HangarApi = {
   deleteAgent: (agentId) => unwrap(ipcRenderer.invoke(IPC.agentsDelete, agentId)),
   toggleBuiltinAgent: (agentId, disabled) =>
     unwrap(ipcRenderer.invoke(IPC.agentsToggleBuiltin, agentId, disabled)),
+  setAgentTabLabel: (agentId, label) =>
+    unwrap(ipcRenderer.invoke(IPC.agentsSetTabLabel, agentId, label)),
 
   // ── repo tiles ────────────────────────────────────────────────────────
   listTiles: () => unwrap(ipcRenderer.invoke(IPC.tilesList)),

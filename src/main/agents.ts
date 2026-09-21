@@ -3,6 +3,7 @@ import {
   AgentDefinition,
   BUILTIN_AGENTS,
   CustomAgent,
+  effectiveTabLabel,
   NewAgentPayload,
   Result
 } from '@shared/types'
@@ -14,7 +15,12 @@ import { settingsService } from './settings'
  */
 
 function toDefinition(a: CustomAgent, builtin: boolean, disabled = false): AgentDefinition {
-  return { ...a, builtin, disabled: builtin ? disabled : undefined }
+  return {
+    ...a,
+    builtin,
+    disabled: builtin ? disabled : undefined,
+    tabLabel: effectiveTabLabel(a.id, a.name, settingsService.get().agentTabLabels)
+  }
 }
 
 class AgentService {
@@ -42,6 +48,22 @@ class AgentService {
     return this.listAll().find((a) => a.id === agentId)
   }
 
+  /**
+   * Merge a tab-label override into the settings map: a non-empty label is
+   * stored keyed by agent id, an empty one removes the override.
+   */
+  private mergedLabels(
+    labels: Record<string, string>,
+    agentId: string,
+    label: string
+  ): Record<string, string> {
+    const merged = { ...(labels ?? {}) }
+    const trimmed = (label ?? '').trim()
+    if (trimmed) merged[agentId] = trimmed
+    else delete merged[agentId]
+    return merged
+  }
+
   add(payload: NewAgentPayload): Result<AgentDefinition> {
     const errors: string[] = []
     if (!payload.name?.trim()) errors.push('name is required')
@@ -49,8 +71,9 @@ class AgentService {
     if (payload.args && !Array.isArray(payload.args)) errors.push('args must be an array')
     if (errors.length > 0) return { ok: false, error: errors.join('; ') }
 
+    const agentId = randomUUID()
     const agent: CustomAgent = {
-      id: randomUUID(),
+      id: agentId,
       name: payload.name.trim(),
       command: payload.command.trim(),
       args: Array.isArray(payload.args) ? payload.args.map(String) : [],
@@ -60,7 +83,8 @@ class AgentService {
     }
     const settings = settingsService.get()
     const result = settingsService.update({
-      customAgents: [...settings.customAgents, agent]
+      customAgents: [...settings.customAgents, agent],
+      agentTabLabels: this.mergedLabels(settings.agentTabLabels, agentId, payload.tabLabel ?? '')
     })
     if (!result.ok) return { ok: false, error: result.error }
     return { ok: true, data: toDefinition(agent, false) }
@@ -82,7 +106,21 @@ class AgentService {
     }
     const next = [...settings.customAgents]
     next[idx] = updated
-    const result = settingsService.update({ customAgents: next })
+    const result = settingsService.update({
+      customAgents: next,
+      agentTabLabels: this.mergedLabels(settings.agentTabLabels, agent.id, agent.tabLabel ?? '')
+    })
+    return result.ok ? { ok: true } : { ok: false, error: result.error }
+  }
+
+  /** Change the tab-label prefix for any agent (built-in or custom). */
+  setTabLabel(agentId: string, label: string): Result<void> {
+    const known = this.listAll().some((a) => a.id === agentId)
+    if (!known) return { ok: false, error: `unknown agent: ${agentId}` }
+    const settings = settingsService.get()
+    const result = settingsService.update({
+      agentTabLabels: this.mergedLabels(settings.agentTabLabels, agentId, label)
+    })
     return result.ok ? { ok: true } : { ok: false, error: result.error }
   }
 

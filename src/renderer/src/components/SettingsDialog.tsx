@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Database,
   Folder,
@@ -188,7 +188,10 @@ function AgentsTab(): React.ReactElement {
   return (
     <section className="space-y-6">
       <div>
-        <SectionTitle title="Built-in agents" desc="Disable the ones you never use." />
+        <SectionTitle
+          title="Built-in agents"
+          desc="Disable the ones you never use; edit the letter(s) shown in default tab names (e.g. K_hangar)."
+        />
         <ul className="mt-2 divide-y divide-zinc-100 rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
           {builtins.map((a) => (
             <li key={a.id} className="flex items-center gap-3 px-3 py-2">
@@ -204,6 +207,7 @@ function AgentsTab(): React.ReactElement {
                   {a.command}
                 </span>
               </span>
+              <BuiltinLabelEditor agent={a} />
               <Toggle
                 checked={!a.disabled}
                 label={`Enable ${a.name}`}
@@ -253,6 +257,41 @@ function AgentsTab(): React.ReactElement {
   )
 }
 
+// ── Agent tab-label editor (built-in rows) ────────────────────────────────
+
+function BuiltinLabelEditor({ agent }: { agent: AgentDefinition }): React.ReactElement {
+  const { setAgentTabLabel } = useAppActions()
+  const [value, setValue] = useState(agent.tabLabel)
+
+  // Re-sync if the effective label changes externally (e.g. settings reset).
+  useEffect(() => setValue(agent.tabLabel), [agent.tabLabel])
+
+  const commit = (): void => {
+    const next = value.trim()
+    if (next === agent.tabLabel) {
+      setValue(agent.tabLabel)
+      return
+    }
+    void setAgentTabLabel(agent.id, next)
+  }
+
+  return (
+    <input
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+      }}
+      maxLength={8}
+      spellCheck={false}
+      aria-label={`Tab label for ${agent.name}`}
+      title="Tab label — letter(s) used in default tab names, e.g. K_hangar"
+      className="h-7 w-14 shrink-0 rounded-md border border-zinc-300 bg-white px-1.5 text-center font-mono text-xs text-zinc-700 transition-colors placeholder:text-zinc-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:placeholder:text-zinc-500"
+    />
+  )
+}
+
 function AgentForm({
   agent,
   onCancel
@@ -271,6 +310,7 @@ function AgentForm({
   )
   const [useShell, setUseShell] = useState(agent?.useShell ?? true)
   const [dirOverride, setDirOverride] = useState(agent?.workingDirOverride ?? '')
+  const [tabLabel, setTabLabel] = useState(agent?.tabLabel ?? '')
   const [advanced, setAdvanced] = useState(
     !!agent?.env || agent?.workingDirOverride !== undefined || agent?.useShell === false
   )
@@ -298,7 +338,8 @@ function AgentForm({
       command: command.trim(),
       args: argsText.trim() ? argsText.trim().split(/\s+/) : [],
       env: parseEnv(),
-      useShell
+      useShell,
+      tabLabel: tabLabel.trim()
     }
     if (dirOverride.trim()) payload.workingDirOverride = dirOverride.trim()
     setBusy(true)
@@ -352,6 +393,20 @@ function AgentForm({
           onChange={(e) => setArgsText(e.target.value)}
           placeholder="--model opus --verbose"
           className={inputClass}
+        />
+      </Field>
+
+      <Field
+        label="Tab label"
+        hint="Letter(s) used in default tab names — e.g. setting K gives “K_repo”. Leave blank to use the first letter of the name."
+      >
+        <input
+          value={tabLabel}
+          onChange={(e) => setTabLabel(e.target.value)}
+          placeholder="K"
+          maxLength={8}
+          spellCheck={false}
+          className={`${inputClass} w-28 font-mono text-center`}
         />
       </Field>
 

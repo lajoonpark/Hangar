@@ -60,6 +60,7 @@ type Action =
   | { type: 'sessionAdd'; session: TerminalSessionInfo }
   | { type: 'sessionExit'; sessionId: string; exitCode: number; signal?: string }
   | { type: 'sessionTitle'; sessionId: string; title: string }
+  | { type: 'sessionRename'; sessionId: string; title: string }
   | { type: 'sessionRemove'; sessionId: string }
 
 const initialState: AppState = {
@@ -140,9 +141,18 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         sessions: state.sessions.map((s) =>
-          s.id === action.sessionId ? { ...s, title: action.title } : s
+          s.id === action.sessionId && !s.customTitle ? { ...s, title: action.title } : s
         )
       }
+    case 'sessionRename': {
+      const title = action.title.trim()
+      return {
+        ...state,
+        sessions: state.sessions.map((s) =>
+          s.id === action.sessionId ? { ...s, customTitle: title || undefined } : s
+        )
+      }
+    }
     case 'sessionRemove': {
       const exits = { ...state.exits }
       delete exits[action.sessionId]
@@ -206,12 +216,16 @@ export interface AppActions {
   addAgent(payload: Parameters<typeof window.hangar.addAgent>[0]): Promise<AgentDefinition>
   deleteAgent(id: string): Promise<void>
   toggleBuiltinAgent(id: string, disabled: boolean): Promise<void>
+  /** Change the tab-label prefix for any agent (persisted in settings). */
+  setAgentTabLabel(agentId: string, label: string): Promise<void>
   reindexRepo(tileId: string): Promise<void>
   removeIndex(tileId: string): Promise<void>
   /** Spawn a terminal; in tab modes the session is registered in this window. */
   spawnTerminal(req: SpawnRequest, tile: RepoTile | undefined): Promise<void>
   killTerminal(sessionId: string): Promise<void>
   closeTab(sessionId: string): Promise<void>
+  /** Set (or clear with an empty string) a per-tab custom title. */
+  renameSession(sessionId: string, title: string): void
   /** PTY output buffered before the terminal mounted. */
   drainOutput(sessionId: string): string
 }
@@ -374,6 +388,10 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
         await hangar.toggleBuiltinAgent(id, disabled)
         dispatch({ type: 'agents', agents: await hangar.listAgents() })
       },
+      async setAgentTabLabel(agentId, label) {
+        await hangar.setAgentTabLabel(agentId, label)
+        dispatch({ type: 'agents', agents: await hangar.listAgents() })
+      },
       async reindexRepo(tileId) {
         await hangar.reindexRepo(tileId).catch(() => undefined)
       },
@@ -411,6 +429,9 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
         dispatch({ type: 'sessionRemove', sessionId })
         buffer.current.drop(sessionId)
         await hangar.killTerminal(sessionId).catch(() => undefined)
+      },
+      renameSession(sessionId, title) {
+        dispatch({ type: 'sessionRename', sessionId, title })
       },
       drainOutput(sessionId) {
         return buffer.current.drain(sessionId)

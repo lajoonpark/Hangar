@@ -13,6 +13,10 @@ export function TerminalPane({ activeId, dark }: { activeId: string | null; dark
   const [reopening, setReopening] = useState<string | null>(null)
 
   const exitCodeOf = (id: string): number | undefined => exits[id]?.exitCode
+  const active = sessions.find((s) => s.id === activeId) ?? null
+  const activeTitle = active
+    ? active.customTitle?.trim() || active.title
+    : 'Session'
 
   return (
     <div className="relative min-h-0 flex-1 bg-white dark:bg-[#0c0c0f]">
@@ -27,29 +31,27 @@ export function TerminalPane({ activeId, dark }: { activeId: string | null; dark
         />
       ))}
 
-      {activeId && exits[activeId] && (
+      {active && exits[active.id] && (
         <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-3 border-b border-amber-300/50 bg-amber-50/95 px-4 py-2.5 backdrop-blur dark:border-amber-700/40 dark:bg-amber-950/60">
           <p className="flex items-center gap-2 text-xs text-amber-800 dark:text-amber-200">
             <CircleAlert size={14} />
             <span>
-              <span className="font-medium">
-                {sessions.find((s) => s.id === activeId)?.title ?? 'Session'} exited
-              </span>
-              {exitCodeOf(activeId) !== 0 && (
-                <span className="ml-1.5 font-mono">(code {exitCodeOf(activeId)})</span>
+              <span className="font-medium">{activeTitle} exited</span>
+              {exitCodeOf(active.id) !== 0 && (
+                <span className="ml-1.5 font-mono">(code {exitCodeOf(active.id)})</span>
               )}
             </span>
           </p>
           <div className="flex items-center gap-1.5">
             <button
               type="button"
-              disabled={reopening === activeId}
+              disabled={reopening === active.id}
               onClick={() => {
-                const dead = sessions.find((s) => s.id === activeId)
+                const dead = active
                 if (!dead) return
                 const tile = tiles.find((t) => t.id === dead.repoTileId)
-                setReopening(activeId)
-                void closeTab(activeId)
+                setReopening(dead.id)
+                void closeTab(dead.id)
                   .catch(() => undefined)
                   .then(async () => {
                     if (tile) {
@@ -68,7 +70,7 @@ export function TerminalPane({ activeId, dark }: { activeId: string | null; dark
             </button>
             <button
               type="button"
-              onClick={() => void closeTab(activeId)}
+              onClick={() => active && void closeTab(active.id)}
               className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-amber-800 hover:bg-amber-200/60 dark:text-amber-200 dark:hover:bg-amber-900/50"
             >
               <X size={11} />

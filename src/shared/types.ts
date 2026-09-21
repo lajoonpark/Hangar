@@ -20,6 +20,12 @@ export interface AppSettings {
   disabledBuiltinAgents: string[]
   /** Local repo indexing (LanceDB full-text index per repo). */
   repoIndexEnabled: boolean
+  /**
+   * agentId → letter(s) used as the prefix in default tab names
+   * (e.g. `K_hangar` for Kilo on the hangar repo). Empty/absent = built-in
+   * default or first letter of the agent name.
+   */
+  agentTabLabels: Record<string, string>
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -31,7 +37,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalFontSize: 13,
   terminalFontFamily: 'Menlo, Consolas, monospace',
   disabledBuiltinAgents: [],
-  repoIndexEnabled: true
+  repoIndexEnabled: true,
+  agentTabLabels: {}
 }
 
 // ── Agents ──────────────────────────────────────────────────────────────────
@@ -49,6 +56,12 @@ export interface CustomAgent {
 export interface AgentDefinition extends CustomAgent {
   builtin: boolean
   disabled?: boolean
+  /**
+   * Effective tab-label prefix used in default tab names (e.g. `K` for Kilo).
+   * Order: explicit settings override (`agentTabLabels`) → built-in default →
+   * first letter of the agent name. Set by the main process.
+   */
+  tabLabel: string
 }
 
 export const BUILTIN_AGENTS: CustomAgent[] = [
@@ -59,6 +72,33 @@ export const BUILTIN_AGENTS: CustomAgent[] = [
   { id: 'aider', name: 'Aider', command: 'aider', args: [], useShell: true },
   { id: 'cursor', name: 'Cursor Agent', command: 'cursor-agent', args: [], useShell: true }
 ]
+
+/** Default tab-label letters for the built-in agents (K = kilo, O = opencode, …). */
+export const DEFAULT_TAB_LABELS: Record<string, string> = {
+  kilo: 'K',
+  opencode: 'O',
+  pi: 'P',
+  claude: 'C',
+  aider: 'A',
+  cursor: 'Cu'
+}
+
+/**
+ * Resolve the tab-label prefix for an agent: explicit user override wins,
+ * then the built-in default, then the first letter of the agent name.
+ */
+export function effectiveTabLabel(
+  agentId: string,
+  name: string,
+  overrides: Record<string, string>
+): string {
+  const explicit = (overrides?.[agentId] ?? '').trim()
+  if (explicit) return explicit
+  const builtin = DEFAULT_TAB_LABELS[agentId]
+  if (builtin) return builtin
+  const first = (name ?? '').trim().charAt(0).toUpperCase()
+  return first || '?'
+}
 
 // ── Repos / tiles ───────────────────────────────────────────────────────────
 
@@ -101,6 +141,8 @@ export interface TerminalSessionInfo {
   /** Last known number of columns the renderer wrote to */
   cols: number
   rows: number
+  /** User-renamed tab title (renderer-local); freezes live `title` updates. */
+  customTitle?: string
 }
 
 export interface SpawnRequest {
@@ -210,6 +252,8 @@ export interface NewAgentPayload {
   env?: Record<string, string>
   useShell: boolean
   workingDirOverride?: string
+  /** Letter(s) used as the default-tab-name prefix for this agent (e.g. `K`). */
+  tabLabel?: string
 }
 
 export interface Result<T = void> {

@@ -64,6 +64,12 @@ function validate(settings: AppSettings): string[] {
     errors.push('terminalFontFamily must be a string')
   if (typeof settings.repoIndexEnabled !== 'boolean')
     errors.push('repoIndexEnabled must be a boolean')
+  if (
+    !settings.agentTabLabels ||
+    typeof settings.agentTabLabels !== 'object' ||
+    Array.isArray(settings.agentTabLabels)
+  )
+    errors.push('agentTabLabels must be an object')
   return errors
 }
 
@@ -89,7 +95,8 @@ const SETTING_KEYS: (keyof AppSettings)[] = [
   'terminalFontSize',
   'terminalFontFamily',
   'disabledBuiltinAgents',
-  'repoIndexEnabled'
+  'repoIndexEnabled',
+  'agentTabLabels'
 ]
 
 class SettingsService {
@@ -107,7 +114,17 @@ class SettingsService {
     this.cache.rootFolders = dedupePaths(
       this.cache.rootFolders.filter((p) => typeof p === 'string' && p.length > 0)
     )
+    this.cache.agentTabLabels = this.sanitizeLabels(this.cache.agentTabLabels)
     this.persist()
+  }
+
+  private sanitizeLabels(labels: unknown): Record<string, string> {
+    if (!labels || typeof labels !== 'object' || Array.isArray(labels)) return {}
+    const out: Record<string, string> = {}
+    for (const [id, label] of Object.entries(labels as Record<string, unknown>)) {
+      if (typeof label === 'string' && label.trim()) out[id] = label.trim()
+    }
+    return out
   }
 
   private sanitizeAgents(agents: unknown): CustomAgent[] {
@@ -154,6 +171,7 @@ class SettingsService {
       )
     }
     next.customAgents = this.sanitizeAgents(next.customAgents)
+    next.agentTabLabels = this.sanitizeLabels(next.agentTabLabels)
     const errors = validate(next)
     if (errors.length > 0) {
       return { ok: false, error: errors.join('; ') }

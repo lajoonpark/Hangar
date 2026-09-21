@@ -51,6 +51,8 @@ export interface HangarApi {
   deleteAgent(agentId: string): Promise<void>
   /** enable/disable a built-in agent. builtin=true means disabled. */
   toggleBuiltinAgent(agentId: string, disabled: boolean): Promise<void>
+  /** Change the letter(s) used as the default-tab-name prefix for any agent. */
+  setAgentTabLabel(agentId: string, label: string): Promise<void>
 
   // ── repo tiles ────────────────────────────────────────────────────────
   /** All cached repo tiles (post-scan), sorted per settings.sortOrder. */

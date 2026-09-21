@@ -25,6 +25,7 @@ export const IPC = {
   agentsUpdate: 'agents:update',
   agentsDelete: 'agents:delete',
   agentsToggleBuiltin: 'agents:toggleBuiltin',
+  agentsSetTabLabel: 'agents:setTabLabel',
 
   // tiles
   tilesList: 'tiles:list',

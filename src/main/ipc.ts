@@ -137,6 +137,14 @@ export function registerIpcHandlers(): void {
     })
   )
 
+  ipcMain.handle(IPC.agentsSetTabLabel, (_e, agentId: string, label: string) =>
+    wrap(() => {
+      const result = agentService.setTabLabel(String(agentId), String(label ?? ''))
+      if (!result.ok) throw new Error(result.error)
+      windowManager.broadcast(IPC.gridInvalidate, { reason: 'agents-changed' })
+    })
+  )
+
   // ── tiles ─────────────────────────────────────────────────────────────
   ipcMain.handle(IPC.terminalList, () => wrap(() => ptyManager.list()))
   ipcMain.handle(IPC.tilesList, () => wrap(() => scannerService.listTiles()))
