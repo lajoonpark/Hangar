@@ -3,6 +3,7 @@ import { Loader2, X } from 'lucide-react'
 import type { TerminalSessionInfo } from '@shared/types'
 import { useAppActions, useAppState } from '@renderer/state/AppProvider'
 import { useResolvedTheme, isMac } from '@renderer/hooks/useTheme'
+import { BootOverlay } from '@renderer/components/BootOverlay'
 import { TerminalView } from '@renderer/components/Terminal'
 
 /**
@@ -17,8 +18,8 @@ export function TerminalWindow({
   sessionId: string
   windowId: string
 }): React.ReactElement {
-  const { settings, exits } = useAppState()
-  const { killTerminal } = useAppActions()
+  const { settings, exits, bootStates, agents } = useAppState()
+  const { killTerminal, noteSessionStatus } = useAppActions()
   const dark = useResolvedTheme(settings)
   const [info, setInfo] = useState<TerminalSessionInfo | null>(null)
 
@@ -29,14 +30,18 @@ export function TerminalWindow({
     const tryFetch = async (attempt: number): Promise<void> => {
       const found = (await window.hangar.listSessions()).find((s) => s.id === sessionId)
       if (cancelled) return
-      if (found) setInfo(found)
-      else if (attempt < 40) setTimeout(() => void tryFetch(attempt + 1), 150)
+      if (found) {
+        setInfo(found)
+        // Hydrate boot state: this window missed the booting/ready broadcast
+        // (it booted after spawn), so take the truth straight from main.
+        noteSessionStatus(sessionId, found.status ?? 'booting')
+      } else if (attempt < 40) setTimeout(() => void tryFetch(attempt + 1), 150)
     }
     void tryFetch(0)
     return () => {
       cancelled = true
     }
-  }, [sessionId])
+  }, [sessionId, noteSessionStatus])
 
   // Live title updates (this window has no entry in the sessions reducer)
   useEffect(() => {
@@ -47,6 +52,13 @@ export function TerminalWindow({
   }, [sessionId])
 
   const exit = exits[sessionId]
+  // The boot state may not be hydrated in this window yet (the booting/ready
+  // broadcast fired before we attached); fall back to the session's own
+  // status snapshot, then 'booting'.
+  const bootState = bootStates[sessionId] ?? info?.status ?? 'booting'
+  const agentLabel = agents.find((a) => a.id === (info?.agentId ?? ''))?.name ?? info?.agentId ?? 'agent'
+  const showBootOverlay =
+    !!info && !exit && (bootState === 'booting' || bootState === 'stalled')
 
   const session: TerminalSessionInfo =
     info ?? {
@@ -95,6 +107,13 @@ export function TerminalWindow({
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <Loader2 size={18} className="animate-spin text-zinc-600" />
           </div>
+        )}
+        {showBootOverlay && (
+          <BootOverlay
+            state={bootState === 'stalled' ? 'stalled' : 'booting'}
+            agentLabel={agentLabel}
+            startedAt={session.createdAt}
+          />
         )}
         {exit && (
           <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between border-b border-amber-700/40 bg-amber-950/60 px-4 py-2.5">

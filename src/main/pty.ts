@@ -6,6 +6,7 @@ import type { IPty } from 'node-pty'
 import {
   SpawnRequest,
   SpawnResult,
+  TerminalBootState,
   TerminalExitEvent,
   TerminalSessionInfo,
   TerminalTitleEvent
@@ -29,11 +30,15 @@ interface Session {
   info: TerminalSessionInfo
   pty: IPty
   titleState: OscParserState
+  /** Fires if the agent produces no output within TERM_BOOT_STALL_MS. */
+  stallTimer?: NodeJS.Timeout
 }
 
 const TERM_COLS = 80
 const TERM_ROWS = 24
 const TERM_GRACE_MS = 1000
+/** How long a freshly-spawned agent may stay silent before we call it "stalled". */
+const TERM_BOOT_STALL_MS = 15_000
 
 class PtyManager extends EventEmitter {
   private sessions = new Map<string, Session>()
@@ -69,17 +74,35 @@ class PtyManager extends EventEmitter {
       cwd,
       createdAt: Date.now(),
       cols: TERM_COLS,
-      rows: TERM_ROWS
+      rows: TERM_ROWS,
+      status: 'booting'
     }
     const session: Session = { info, pty, titleState: {} }
     this.sessions.set(sessionId, session)
 
+    // Tell every window "this agent is alive but hasn't printed anything yet"
+    // so their terminal panes can show a loading indicator immediately.
+    this.broadcastStatus(session, 'booting')
+
+    // Some agents (e.g. `kilo`) take several seconds before their TUI paints
+    // the screen. If nothing arrived after the stall window, escalate so the
+    // UI can nudge instead of just spinning forever.
+    session.stallTimer = setTimeout(() => {
+      if (session.info.status === 'booting') this.broadcastStatus(session, 'stalled')
+    }, TERM_BOOT_STALL_MS)
+
     pty.onData((data) => {
+      // First output means boot is done — clear the loading state.
+      if (session.info.status === 'booting' || session.info.status === 'stalled') {
+        this.clearStall(session)
+        this.broadcastStatus(session, 'ready')
+      }
       this.handleData(session, data)
       this.broadcast(IPC.terminalData, { sessionId, data })
     })
 
     pty.onExit(({ exitCode, signal }) => {
+      this.clearStall(session)
       this.sessions.delete(sessionId)
       const evt: TerminalExitEvent = {
         sessionId,
@@ -175,12 +198,27 @@ class PtyManager extends EventEmitter {
   async kill(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId)
     if (!session) return
+    this.clearStall(session)
     this.sessions.delete(sessionId)
     await this.terminate(session)
   }
 
+  /** Set a session's boot state in main + broadcast it to every window. */
+  private broadcastStatus(session: Session, status: TerminalBootState): void {
+    session.info.status = status
+    this.broadcast(IPC.terminalStatus, { sessionId: session.info.id, status })
+  }
+
+  private clearStall(session: Session): void {
+    if (session.stallTimer) {
+      clearTimeout(session.stallTimer)
+      session.stallTimer = undefined
+    }
+  }
+
   private async terminate(session: Session): Promise<void> {
     const { pty } = session
+    this.clearStall(session)
     let alive = true
     const exit = new Promise<void>((resolve) => pty.onExit(() => { alive = false; resolve() }))
 

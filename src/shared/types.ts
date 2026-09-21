@@ -141,6 +141,14 @@ export interface TerminalSessionInfo {
   /** Last known number of columns the renderer wrote to */
   cols: number
   rows: number
+  /**
+   * Live boot state as tracked by the main process
+   * ('booting' → 'ready' on first output, or 'stalled' past a timeout).
+   * Present on sessions returned by spawn/listSessions; renderer keeps its
+   * own copy in state.bootStates[]. Sessions sent through the spinner
+   * connection poll may read this to hydrate an overlay after a late attach.
+   */
+  status?: TerminalBootState
   /** User-renamed tab title (renderer-local); freezes live `title` updates. */
   customTitle?: string
 }
@@ -168,6 +176,20 @@ export interface TerminalExitEvent {
 export interface TerminalTitleEvent {
   sessionId: string
   title: string
+}
+
+/**
+ * Per-session boot state, driven by the main process:
+ * - `booting` — PTY spawned, no output received yet (user-visible "starting…").
+ * - `stalled` — still no output after `TERM_BOOT_STALL_MS` (show a nudge, not a full screen of panic).
+ * - `ready`   — first output received for this session. Also the end state for
+ *   sessions that are gone (exit is reported separately via terminal:exit).
+ */
+export type TerminalBootState = 'booting' | 'stalled' | 'ready'
+
+export interface TerminalStatusEvent {
+  sessionId: string
+  status: TerminalBootState
 }
 
 // ── Repo indexing (LanceDB) ─────────────────────────────────────────────────

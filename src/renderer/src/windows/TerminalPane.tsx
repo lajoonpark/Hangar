@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { CircleAlert, RotateCcw, X } from 'lucide-react'
 import { useAppActions, useAppState } from '@renderer/state/AppProvider'
+import { BootOverlay } from '@renderer/components/BootOverlay'
 import { TerminalView } from '@renderer/components/Terminal'
 
 /**
@@ -8,7 +9,7 @@ import { TerminalView } from '@renderer/components/Terminal'
  * plus the "process exited" overlay for dead sessions.
  */
 export function TerminalPane({ activeId, dark }: { activeId: string | null; dark: boolean }): React.ReactElement {
-  const { settings, sessions, exits, tiles } = useAppState()
+  const { settings, sessions, exits, bootStates, agents, tiles } = useAppState()
   const { closeTab, spawnTerminal } = useAppActions()
   const [reopening, setReopening] = useState<string | null>(null)
 
@@ -17,6 +18,12 @@ export function TerminalPane({ activeId, dark }: { activeId: string | null; dark
   const activeTitle = active
     ? active.customTitle?.trim() || active.title
     : 'Session'
+  const activeBoot = active ? bootStates[active.id] : undefined
+  const activeAgentLabel = active
+    ? (agents.find((a) => a.id === active.agentId)?.name ?? active.agentId)
+    : ''
+  const showBootOverlay =
+    !!active && !exits[active.id] && (activeBoot === 'booting' || activeBoot === 'stalled')
 
   return (
     <div className="relative min-h-0 flex-1 bg-white dark:bg-[#0c0c0f]">
@@ -30,6 +37,14 @@ export function TerminalPane({ activeId, dark }: { activeId: string | null; dark
           dark={dark}
         />
       ))}
+
+      {showBootOverlay && active && (
+        <BootOverlay
+          state={activeBoot === 'stalled' ? 'stalled' : 'booting'}
+          agentLabel={activeAgentLabel}
+          startedAt={active.createdAt}
+        />
+      )}
 
       {active && exits[active.id] && (
         <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-3 border-b border-amber-300/50 bg-amber-50/95 px-4 py-2.5 backdrop-blur dark:border-amber-700/40 dark:bg-amber-950/60">

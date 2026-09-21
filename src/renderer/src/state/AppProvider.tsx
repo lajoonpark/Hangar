@@ -15,6 +15,7 @@ import type {
   RootFolder,
   ScanProgress,
   SpawnRequest,
+  TerminalBootState,
   TerminalSessionInfo
 } from '@shared/types'
 
@@ -44,6 +45,12 @@ export interface AppState {
   sessions: TerminalSessionInfo[]
   /** Sessions whose PTY process has exited (kept as dead tabs until closed) */
   exits: Record<string, { exitCode: number; signal?: string }>
+  /**
+   * sessionId → live boot state from the main process ('booting' | 'stalled' | 'ready').
+   * Used by the terminal UI to show a "starting…" overlay until the agent
+   * prints its first output. Absent = unknown (e.g. exited before any event).
+   */
+  bootStates: Record<string, TerminalBootState>
 }
 
 type Action =
@@ -61,6 +68,7 @@ type Action =
   | { type: 'sessionExit'; sessionId: string; exitCode: number; signal?: string }
   | { type: 'sessionTitle'; sessionId: string; title: string }
   | { type: 'sessionRename'; sessionId: string; title: string }
+  | { type: 'sessionStatus'; sessionId: string; status: TerminalBootState }
   | { type: 'sessionRemove'; sessionId: string }
 
 const initialState: AppState = {
@@ -72,7 +80,8 @@ const initialState: AppState = {
   indexStatuses: {},
   scanning: {},
   sessions: [],
-  exits: {}
+  exits: {},
+  bootStates: {}
 }
 
 function reducer(state: AppState, action: Action): AppState {
@@ -128,15 +137,38 @@ function reducer(state: AppState, action: Action): AppState {
     }
     case 'sessionAdd':
       if (state.sessions.some((s) => s.id === action.session.id)) return state
-      return { ...state, sessions: [...state.sessions, action.session] }
-    case 'sessionExit':
       return {
         ...state,
-        exits: {
-          ...state.exits,
-          [action.sessionId]: { exitCode: action.exitCode, signal: action.signal }
+        sessions: [...state.sessions, action.session],
+        // Seed 'booting' unless a status event already resolved this session
+        // (the IPC invoke response and the booting broadcast race).
+        bootStates: {
+          ...state.bootStates,
+          [action.session.id]: state.bootStates[action.session.id] ?? 'booting'
         }
       }
+    case 'sessionExit':
+      {
+        const bootStates = { ...state.bootStates }
+        delete bootStates[action.sessionId]
+        return {
+          ...state,
+          bootStates,
+          exits: {
+            ...state.exits,
+            [action.sessionId]: { exitCode: action.exitCode, signal: action.signal }
+          }
+        }
+      }
+    case 'sessionStatus': {
+      // Never regress a resolved session back to booting/stalled (guards
+      // against out-of-order delivery of the booting vs ready broadcasts).
+      if (state.bootStates[action.sessionId] === 'ready') return state
+      return {
+        ...state,
+        bootStates: { ...state.bootStates, [action.sessionId]: action.status }
+      }
+    }
     case 'sessionTitle':
       return {
         ...state,
@@ -156,10 +188,13 @@ function reducer(state: AppState, action: Action): AppState {
     case 'sessionRemove': {
       const exits = { ...state.exits }
       delete exits[action.sessionId]
+      const bootStates = { ...state.bootStates }
+      delete bootStates[action.sessionId]
       return {
         ...state,
         sessions: state.sessions.filter((s) => s.id !== action.sessionId),
-        exits
+        exits,
+        bootStates
       }
     }
     default:
@@ -226,6 +261,12 @@ export interface AppActions {
   closeTab(sessionId: string): Promise<void>
   /** Set (or clear with an empty string) a per-tab custom title. */
   renameSession(sessionId: string, title: string): void
+  /**
+   * Record a session's boot state without adding it to the tab bar.
+   * Used by terminal windows hydrating a pre-existing session after a late
+   * attach (their spawn happened before this window subscribed to events).
+   */
+  noteSessionStatus(sessionId: string, status: TerminalBootState): void
   /** PTY output buffered before the terminal mounted. */
   drainOutput(sessionId: string): string
 }
@@ -302,6 +343,9 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
       }),
       hangar.onTerminalTitle(({ sessionId, title }) =>
         dispatch({ type: 'sessionTitle', sessionId, title })
+      ),
+      hangar.onTerminalStatus(({ sessionId, status }) =>
+        dispatch({ type: 'sessionStatus', sessionId, status })
       ),
       hangar.onScanProgress((evt) => dispatch({ type: 'scanProgress', evt })),
       hangar.onScanComplete(({ rootId }) => {
@@ -432,6 +476,9 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
       },
       renameSession(sessionId, title) {
         dispatch({ type: 'sessionRename', sessionId, title })
+      },
+      noteSessionStatus(sessionId, status) {
+        dispatch({ type: 'sessionStatus', sessionId, status })
       },
       drainOutput(sessionId) {
         return buffer.current.drain(sessionId)

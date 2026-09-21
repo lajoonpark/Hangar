@@ -53,6 +53,7 @@ export const IPC = {
   terminalData: 'terminal:data',
   terminalExit: 'terminal:exit',
   terminalTitle: 'terminal:title',
+  terminalStatus: 'terminal:status',
   folderScanProgress: 'folder:scanProgress',
   folderScanComplete: 'folder:scanComplete',
   gridInvalidate: 'grid:invalidate',

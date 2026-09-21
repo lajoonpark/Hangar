@@ -15,6 +15,7 @@ import type {
   SpawnResult,
   TerminalExitEvent,
   TerminalSessionInfo,
+  TerminalStatusEvent,
   TerminalTitleEvent
 } from './types'
 
@@ -91,6 +92,12 @@ export interface HangarApi {
   onTerminalData(cb: (e: { sessionId: string; data: string }) => void): () => void
   onTerminalExit(cb: (e: TerminalExitEvent) => void): () => void
   onTerminalTitle(cb: (e: TerminalTitleEvent) => void): () => void
+  /**
+   * Live boot state per session: 'booting' while a spawned agent has produced
+   * zero output, 'stalled' after a no-output timeout, 'ready' on first output.
+   * Use this to show/hide a "starting…" overlay over a blank terminal.
+   */
+  onTerminalStatus(cb: (e: TerminalStatusEvent) => void): () => void
   onScanProgress(cb: (e: ScanProgress) => void): () => void
   onScanComplete(cb: (e: ScanResult) => void): () => void
   /** Emitted when tiles/settings changed in another window — re-fetch. */
