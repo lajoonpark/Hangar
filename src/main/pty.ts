@@ -261,9 +261,19 @@ class PtyManager extends EventEmitter {
   private handleData(session: Session, data: string): void {
     const title = extractOscTitle(session.titleState, data)
     if (title && title !== session.info.title) {
-      session.info.title = title
-      const evt: TerminalTitleEvent = { sessionId: session.info.id, title }
-      this.broadcast(IPC.terminalTitle, evt)
+      // Ignore generic agent-name titles (e.g. "Kilo CLI") if we already have
+      // a descriptive title containing the repo name (e.g. "K_hangar").
+      // The initial title format is "<tabLabel>_<repo>", so it contains "_".
+      // Agent names from BUILTIN_AGENTS don't contain "_".
+      const agent = agentService.byId(session.info.agentId)
+      const agentName = agent?.name ?? ''
+      const isGenericAgentTitle = agentName && title === agentName
+      const hasDescriptiveTitle = session.info.title.includes('_')
+      if (!(isGenericAgentTitle && hasDescriptiveTitle)) {
+        session.info.title = title
+        const evt: TerminalTitleEvent = { sessionId: session.info.id, title }
+        this.broadcast(IPC.terminalTitle, evt)
+      }
     }
   }
 }
