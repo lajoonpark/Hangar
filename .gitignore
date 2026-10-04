@@ -3,3 +3,8 @@ dist
 out
 .DS_Store
 *.tsbuildinfo
+
+# Full-res production asset masters (local only, too large for git/context).
+# Commit only assets/agent/ previews + final build/ icons.
+assets/production/*
+!assets/production/README.md

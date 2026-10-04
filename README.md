@@ -1,4 +1,4 @@
-# Hangar
+# SpawnPoint
 
 <div align="center">
 
@@ -17,16 +17,16 @@
 
 ## Overview
 
-**Hangar** is a cross-platform desktop application (macOS, Windows, Linux) that lets developers manage and launch terminal-based coding agents directly into their repositories.
+**SpawnPoint** is a cross-platform desktop application (macOS, Windows, Linux) that lets developers manage and launch terminal-based coding agents directly into their repositories.
 
-Point Hangar at folders containing your projects, and it displays each immediate subfolder as a launchable tile. Click a tile, pick an agent (Kilo, OpenCode, Claude Code, Aider, or your own custom commands), and a live terminal opens already `cd`'d into that repo — ready to code.
+Point SpawnPoint at folders containing your projects, and it displays each immediate subfolder as a launchable tile. Click a tile, pick an agent (Kilo, OpenCode, Claude Code, Aider, or your own custom commands), and a live terminal opens already `cd`'d into that repo — ready to code.
 
 ---
 
 ## Features
 
 ### 🏗️ Repository Management
-- **Root folders** — Add one or more parent directories; Hangar scans their immediate children as repos
+- **Root folders** — Add one or more parent directories; SpawnPoint scans their immediate children as repos
 - **Smart scanning** — Chunked, debounced, cancellable scans handle 10k+ folders without blocking the UI
 - **Flexible sorting** — Recently opened (default), alphabetical, or manual order
 - **Live progress** — Real-time scan progress badges on each root folder
@@ -55,7 +55,7 @@ Define your own agents with full control:
 - **xterm.js** — Full-featured terminal with 10k line scrollback
 - **Web links addon** — Clickable URLs, file paths, and stack traces
 - **Fit addon** — Automatic resize on window/tab changes
-- **OSC title detection** — Terminal title updates from agent output (e.g., `kilo @ hangar`)
+- **OSC title detection** — Terminal title updates from agent output (e.g., `kilo @ spawnpoint`)
 - **Graceful shutdown** — SIGTERM → 1s grace → SIGKILL on close/quit
 
 ### 🪟 Window Modes
@@ -128,8 +128,8 @@ Define your own agents with full control:
 ### Development
 ```bash
 # Clone and install
-git clone https://github.com/your-org/hangar.git
-cd hangar
+git clone https://github.com/your-org/spawnpoint.git
+cd spawnpoint
 npm install
 
 # Start dev servers (Vite + Electron)
@@ -162,7 +162,7 @@ npm run dist
 ## Project Structure
 
 ```
-hangar/
+spawnpoint/
 ├── .github/                    # CI workflows (if any)
 ├── build/                      # electron-builder assets (icons, etc.)
 ├── dist/                       # Packaged outputs (gitignored)
@@ -225,9 +225,9 @@ hangar/
 
 ### Settings File
 Persisted to `electron-store` at:
-- **macOS**: `~/Library/Application Support/Hangar/hangar-settings.json`
-- **Windows**: `%APPDATA%/Hangar/hangar-settings.json`
-- **Linux**: `~/.config/Hangar/hangar-settings.json`
+- **macOS**: `~/Library/Application Support/SpawnPoint/spawnpoint-settings.json`
+- **Windows**: `%APPDATA%/SpawnPoint/spawnpoint-settings.json`
+- **Linux**: `~/.config/SpawnPoint/spawnpoint-settings.json`
 
 ```json
 {
@@ -255,9 +255,9 @@ Persisted to `electron-store` at:
 
 ### Repo Indexes
 LanceDB database at:
-- **macOS**: `~/Library/Application Support/Hangar/repo-index.lance/`
-- **Windows**: `%APPDATA%/Hangar/repo-index.lance/`
-- **Linux**: `~/.config/Hangar/repo-index.lance/`
+- **macOS**: `~/Library/Application Support/SpawnPoint/repo-index.lance/`
+- **Windows**: `%APPDATA%/SpawnPoint/repo-index.lance/`
+- **Linux**: `~/.config/SpawnPoint/repo-index.lance/`
 
 Each repo gets a table `repo_<tileId>` with columns: `path`, `startLine`, `endLine`, `lang`, `content`.
 
@@ -370,7 +370,7 @@ export const BUILTIN_AGENTS: CustomAgent[] = [
 2. Add handler in `src/main/ipc.ts` (use `wrap()` for error normalization)
 3. Expose in `src/preload/index.ts` via `contextBridge.exposeInMainWorld`
 4. Add TypeScript types in `src/shared/api.ts`
-5. Call from renderer via `window.hangar.<channel>(...)`
+5. Call from renderer via `window.spawnpoint.<channel>(...)`
 
 ### Debugging Main Process
 ```bash
@@ -386,7 +386,7 @@ npm run dev
 ## Packaging Details
 
 ### macOS (DMG)
-- `appId: com.hangar.app`
+- `appId: com.spawnpoint.app`
 - Category: `public.app-category.developer-tools`
 - Universal/ARM64 only (Intel deprecated)
 - `hardenedRuntime: false` (node-pty needs unsigned binaries)

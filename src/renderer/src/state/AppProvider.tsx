@@ -271,7 +271,7 @@ export interface AppActions {
   updateSettings(partial: Partial<AppSettings>): Promise<void>
   resetSettings(): Promise<void>
   saveAgent(agent: AgentDefinition): Promise<void>
-  addAgent(payload: Parameters<typeof window.hangar.addAgent>[0]): Promise<AgentDefinition>
+  addAgent(payload: Parameters<typeof window.spawnpoint.addAgent>[0]): Promise<AgentDefinition>
   deleteAgent(id: string): Promise<void>
   toggleBuiltinAgent(id: string, disabled: boolean): Promise<void>
   /** Change the tab-label prefix for any agent (persisted in settings). */
@@ -322,27 +322,27 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
   const buffer = useRef(new OutputBuffer())
 
   useEffect(() => {
-    const hangar = window.hangar
+    const api = window.spawnpoint
     let disposed = false
 
     const fetchSettings = (): Promise<void> =>
-      hangar.getSettings().then((settings) => {
+      api.getSettings().then((settings) => {
         if (!disposed) dispatch({ type: 'settings', settings })
       })
     const fetchRoots = (): Promise<void> =>
-      hangar.listFolders().then((roots) => {
+      api.listFolders().then((roots) => {
         if (!disposed) dispatch({ type: 'roots', roots })
       })
     const fetchTiles = (): Promise<void> =>
-      hangar.listTiles().then((tiles) => {
+      api.listTiles().then((tiles) => {
         if (!disposed) dispatch({ type: 'tiles', tiles })
       })
     const fetchAgents = (): Promise<void> =>
-      hangar.listAgents().then((agents) => {
+      api.listAgents().then((agents) => {
         if (!disposed) dispatch({ type: 'agents', agents })
       })
     const fetchIndex = (): Promise<void> =>
-      hangar
+      api
         .indexStatus()
         .then((statuses) => {
           if (!disposed) dispatch({ type: 'indexStatuses', statuses })
@@ -359,35 +359,35 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
     const boot = async (): Promise<void> => {
       await refreshAll()
       dispatch({ type: 'ready' })
-      if ((await hangar.listFolders()).length > 0) {
-        await hangar.scanAllFolders().catch(() => undefined)
+      if ((await api.listFolders()).length > 0) {
+        await api.scanAllFolders().catch(() => undefined)
       }
     }
     void boot()
 
     // ── main → renderer events ──
     const offs = [
-      hangar.onTerminalData(({ sessionId, data }) => buffer.current.push(sessionId, data)),
-      hangar.onTerminalExit(({ sessionId, exitCode, signal }) => {
+      api.onTerminalData(({ sessionId, data }) => buffer.current.push(sessionId, data)),
+      api.onTerminalExit(({ sessionId, exitCode, signal }) => {
         buffer.current.drop(sessionId)
         dispatch({ type: 'sessionExit', sessionId, exitCode, signal })
       }),
-      hangar.onTerminalTitle(({ sessionId, title }) =>
+      api.onTerminalTitle(({ sessionId, title }) =>
         dispatch({ type: 'sessionTitle', sessionId, title })
       ),
-      hangar.onTerminalStatus(({ sessionId, status }) =>
+      api.onTerminalStatus(({ sessionId, status }) =>
         dispatch({ type: 'sessionStatus', sessionId, status })
       ),
-      hangar.onScanProgress((evt) => dispatch({ type: 'scanProgress', evt })),
-      hangar.onScanComplete(({ rootId }) => {
+      api.onScanProgress((evt) => dispatch({ type: 'scanProgress', evt })),
+      api.onScanComplete(({ rootId }) => {
         dispatch({ type: 'scanDone', rootId })
         void fetchTiles()
       }),
-      hangar.onGridInvalidate(() => void refreshAll()),
-      hangar.onIndexProgress(({ repoTileId }) =>
+      api.onGridInvalidate(() => void refreshAll()),
+      api.onIndexProgress(({ repoTileId }) =>
         dispatch({ type: 'indexProgress', repoTileId, state: 'indexing' })
       ),
-      hangar.onIndexComplete(({ repoTileId, ok, files, chunks, error }) =>
+      api.onIndexComplete(({ repoTileId, ok, files, chunks, error }) =>
         dispatch({
           type: 'indexComplete',
           status: {
@@ -410,14 +410,14 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
   }, [])
 
   const actions = useMemo<AppActions>(() => {
-    const hangar = window.hangar
+    const api = window.spawnpoint
     const refreshAll = async (): Promise<void> => {
       await Promise.all([
-        hangar.getSettings().then((settings) => dispatch({ type: 'settings', settings })),
-        hangar.listFolders().then((roots) => dispatch({ type: 'roots', roots })),
-        hangar.listTiles().then((tiles) => dispatch({ type: 'tiles', tiles })),
-        hangar.listAgents().then((agents) => dispatch({ type: 'agents', agents })),
-        hangar
+        api.getSettings().then((settings) => dispatch({ type: 'settings', settings })),
+        api.listFolders().then((roots) => dispatch({ type: 'roots', roots })),
+        api.listTiles().then((tiles) => dispatch({ type: 'tiles', tiles })),
+        api.listAgents().then((agents) => dispatch({ type: 'agents', agents })),
+        api
           .indexStatus()
           .then((statuses) => dispatch({ type: 'indexStatuses', statuses }))
           .catch(() => undefined)
@@ -426,61 +426,61 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
     return {
       refreshAll,
       async refreshTiles() {
-        dispatch({ type: 'tiles', tiles: await hangar.listTiles() })
+        dispatch({ type: 'tiles', tiles: await api.listTiles() })
       },
       async addFolders() {
-        const added = await hangar.addFolders()
+        const added = await api.addFolders()
         dispatch({ type: 'roots', roots: added })
-        await hangar.scanAllFolders().catch(() => undefined)
+        await api.scanAllFolders().catch(() => undefined)
       },
       async removeFolder(id) {
-        await hangar.removeFolder(id)
+        await api.removeFolder(id)
         await refreshAll()
       },
       async rescanAll() {
-        await hangar.scanAllFolders()
+        await api.scanAllFolders()
       },
       async updateSettings(partial) {
-        dispatch({ type: 'settings', settings: await hangar.setSettings(partial) })
+        dispatch({ type: 'settings', settings: await api.setSettings(partial) })
       },
       async resetSettings() {
-        dispatch({ type: 'settings', settings: await hangar.resetSettings() })
+        dispatch({ type: 'settings', settings: await api.resetSettings() })
       },
       async saveAgent(agent) {
-        await hangar.updateAgent(agent)
-        dispatch({ type: 'agents', agents: await hangar.listAgents() })
+        await api.updateAgent(agent)
+        dispatch({ type: 'agents', agents: await api.listAgents() })
       },
       async addAgent(payload) {
-        const created = await hangar.addAgent(payload)
-        dispatch({ type: 'agents', agents: await hangar.listAgents() })
+        const created = await api.addAgent(payload)
+        dispatch({ type: 'agents', agents: await api.listAgents() })
         return created
       },
       async deleteAgent(id) {
-        await hangar.deleteAgent(id)
-        dispatch({ type: 'agents', agents: await hangar.listAgents() })
+        await api.deleteAgent(id)
+        dispatch({ type: 'agents', agents: await api.listAgents() })
       },
       async toggleBuiltinAgent(id, disabled) {
-        await hangar.toggleBuiltinAgent(id, disabled)
-        dispatch({ type: 'agents', agents: await hangar.listAgents() })
+        await api.toggleBuiltinAgent(id, disabled)
+        dispatch({ type: 'agents', agents: await api.listAgents() })
       },
       async setAgentTabLabel(agentId, label) {
-        await hangar.setAgentTabLabel(agentId, label)
-        dispatch({ type: 'agents', agents: await hangar.listAgents() })
+        await api.setAgentTabLabel(agentId, label)
+        dispatch({ type: 'agents', agents: await api.listAgents() })
       },
       async reorderAgents(agentIds) {
-        dispatch({ type: 'settings', settings: await hangar.setSettings({ agentOrder: agentIds }) })
-        dispatch({ type: 'agents', agents: await hangar.listAgents() })
+        dispatch({ type: 'settings', settings: await api.setSettings({ agentOrder: agentIds }) })
+        dispatch({ type: 'agents', agents: await api.listAgents() })
       },
       async reindexRepo(tileId) {
-        await hangar.reindexRepo(tileId).catch(() => undefined)
+        await api.reindexRepo(tileId).catch(() => undefined)
       },
       async removeIndex(tileId) {
-        await hangar.removeIndex(tileId).catch(() => undefined)
-        const statuses = await hangar.indexStatus()
+        await api.removeIndex(tileId).catch(() => undefined)
+        const statuses = await api.indexStatus()
         dispatch({ type: 'indexStatuses', statuses })
       },
       async spawnTerminal(req, tile) {
-        const result = await hangar.spawnTerminal(req)
+        const result = await api.spawnTerminal(req)
         // Only tab-mode spawns land in THIS window. Window-mode spawns are
         // owned by the freshly created terminal window (which attaches via
         // its ?sessionId= boot param).
@@ -501,13 +501,13 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
         }
       },
       async killTerminal(sessionId) {
-        await hangar.killTerminal(sessionId)
+        await api.killTerminal(sessionId)
         buffer.current.drop(sessionId)
       },
       async closeTab(sessionId) {
         dispatch({ type: 'sessionRemove', sessionId })
         buffer.current.drop(sessionId)
-        await hangar.killTerminal(sessionId).catch(() => undefined)
+        await api.killTerminal(sessionId).catch(() => undefined)
       },
       renameSession(sessionId, title) {
         dispatch({ type: 'sessionRename', sessionId, title })

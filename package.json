@@ -1,9 +1,9 @@
 {
-  "name": "hangar",
+  "name": "spawnpoint",
   "version": "1.1.6",
   "description": "Repo terminal launcher for coding agents",
   "main": "./out/main/index.js",
-  "author": "Hangar",
+  "author": "SpawnPoint",
   "private": true,
   "scripts": {
     "dev": "electron-vite dev",

@@ -1,7 +1,8 @@
-import { Moon, Settings, Sun, Warehouse } from 'lucide-react'
+import { Moon, Settings, Sun } from 'lucide-react'
 import { useAppState, useAppActions } from '@renderer/state/AppProvider'
 import { isMac } from '@renderer/hooks/useTheme'
 import { IconButton } from './ui'
+import { SpawnMark } from './SpawnMark'
 
 /**
  * Frameless-window title bar: drag region, wordmark, global actions.
@@ -18,11 +19,11 @@ export function TitleBar({ onOpenSettings }: { onOpenSettings(): void }): React.
       style={isMac ? { paddingLeft: 78 } : undefined}
     >
       <div className="flex items-center gap-2 pointer-events-none select-none">
-        <span className="flex h-5 w-5 items-center justify-center rounded-[5px] bg-accent text-zinc-950">
-          <Warehouse size={13} strokeWidth={2.4} />
+        <span className="flex h-5 w-5 items-center justify-center rounded-[5px] bg-zinc-900 text-white dark:bg-white dark:text-zinc-950">
+          <SpawnMark size={11} />
         </span>
         <span className="text-[13px] font-semibold tracking-tight text-zinc-800 dark:text-zinc-100">
-          Hangar
+          SpawnPoint
         </span>
       </div>
 
