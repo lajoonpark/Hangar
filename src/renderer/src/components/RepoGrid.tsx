@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { FolderSearch, RefreshCw, Warehouse } from 'lucide-react'
+import { FolderSearch, RefreshCw } from 'lucide-react'
 import type { RepoIndexStatus, RepoTile } from '@shared/types'
 import { useAppActions, useAppState } from '@renderer/state/AppProvider'
 import { Button, inputClass } from './ui'
 import { RepoTile as RepoTileCard } from './RepoTile'
+import { SpawnMark } from './SpawnMark'
 
 /**
  * The repo grid with client-side name filtering, plus the first-run
@@ -106,11 +107,11 @@ function NoRepos({
 }): React.ReactElement {
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-10 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-b from-amber-50 to-amber-100 text-amber-600 ring-1 ring-amber-200/70 dark:from-amber-950/40 dark:to-amber-900/20 dark:text-amber-400 dark:ring-amber-900/60">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-900 text-white ring-1 ring-zinc-700 dark:bg-white dark:text-zinc-950 dark:ring-zinc-200">
         {scanning ? (
           <RefreshCw size={22} className="animate-spin" />
         ) : (
-          <Warehouse size={24} />
+          <SpawnMark size={26} />
         )}
       </div>
       <h2 className="mt-4 text-base font-semibold text-zinc-800 dark:text-zinc-100">
@@ -118,7 +119,7 @@ function NoRepos({
       </h2>
       <p className="mt-1 max-w-sm text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
         {scanning
-          ? 'Hangar is reading the immediate subfolders of your root folders.'
+          ? 'SpawnPoint is reading the immediate subfolders of your root folders.'
           : 'Subfolders of your root folders will appear here as launchable repos. Make sure your root folders actually contain project folders, or rescan.'}
       </p>
       {!scanning && (
@@ -134,14 +135,14 @@ function NoRepos({
 export function Welcome({ onAddFolders }: { onAddFolders(): void }): React.ReactElement {
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-b from-amber-400 to-amber-500 text-zinc-950 shadow-tile-hover ring-1 ring-amber-600/40">
-        <Warehouse size={28} strokeWidth={2.2} />
+      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-zinc-900 text-white shadow-tile-hover ring-1 ring-zinc-700 dark:bg-white dark:text-zinc-950 dark:ring-zinc-200">
+        <SpawnMark size={30} />
       </div>
       <h1 className="mt-5 text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-        Welcome to Hangar
+        Welcome to SpawnPoint
       </h1>
       <p className="mt-2 max-w-md text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
-        Point Hangar at folders full of projects and launch your coding agents — kilo, Claude
+        Point SpawnPoint at folders full of projects and launch your coding agents — kilo, Claude
         Code, aider, OpenCode or your own commands — straight into any repo.
       </p>
 

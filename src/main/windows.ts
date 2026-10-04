@@ -33,11 +33,11 @@ class WindowManager {
       height: isTerminal ? 760 : 860,
       minWidth: 480,
       minHeight: 360,
-      title: title ?? 'Hangar',
+      title: title ?? 'SpawnPoint',
       titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
       trafficLightPosition: { x: 12, y: 12 },
       // Native tabbing for terminal windows on macOS
-      tabbingIdentifier: isTerminal ? 'hangar-terminal' : undefined,
+      tabbingIdentifier: isTerminal ? 'spawnpoint-terminal' : undefined,
       webPreferences: {
         preload: path.join(__dirname, '../preload/index.js'),
         contextIsolation: true,

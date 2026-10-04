@@ -1,5 +1,5 @@
-appId: com.hangar.app
-productName: Hangar
+appId: com.spawnpoint.app
+productName: SpawnPoint
 directories:
   buildResources: build
   output: dist
