@@ -3,6 +3,10 @@ dist
 out
 .DS_Store
 *.tsbuildinfo
+.commandcode/
+.kilo/
+HANDOFF_PROMPT.md
+session-*.md
 
 # Full-res production asset masters (local only, too large for git/context).
 # Commit only assets/agent/ previews + final build/ icons.
