@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Database,
   Folder,
+  GripVertical,
   LayoutGrid,
   Loader2,
   Pencil,
@@ -14,6 +15,7 @@ import {
   X
 } from 'lucide-react'
 import type { AgentDefinition, NewAgentPayload } from '@shared/types'
+import { formatShortcut, normalizeShortcut, shortcutFromEvent } from '@shared/types'
 import { useAppActions, useAppState } from '@renderer/state/AppProvider'
 import { isMac } from '@renderer/hooks/useTheme'
 import {
@@ -160,10 +162,92 @@ function GeneralTab(): React.ReactElement {
         </div>
         <p className="mt-1.5 text-[11px] text-zinc-400">
           With “Choose per launch”, sessions open as tabs by default — {isMac ? '⌘' : 'Ctrl'}-click
-          an agent to open a window instead.
+          an agent to open a window instead. With “Tabs” or “Windows”,{' '}
+          {isMac ? '⌘' : 'Ctrl'}-clicking an agent always opens a new window.
         </p>
       </div>
+
+      <div>
+        <SectionTitle
+          title="Sidebar shortcut"
+          desc="Key combination that shows or hides the repository sidebar when sessions are open."
+        />
+        <div className="mt-2">
+          <ShortcutRecorder
+            value={settings.sidebarShortcut}
+            onChange={(shortcut) => void updateSettings({ sidebarShortcut: shortcut })}
+          />
+        </div>
+      </div>
     </section>
+  )
+}
+
+// ── Sidebar shortcut recorder ──────────────────────────────────────────
+
+/** Click-to-record shortcut field: press any modifier+key combo to rebind. */
+function ShortcutRecorder({
+  value,
+  onChange
+}: {
+  value: string
+  onChange(shortcut: string): void
+}): React.ReactElement {
+  const [recording, setRecording] = useState(false)
+  const boxRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!recording) return
+    boxRef.current?.focus()
+  }, [recording])
+
+  const stop = (): void => setRecording(false)
+
+  const onKeyDown = (e: React.KeyboardEvent): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.key === 'Escape') {
+      stop()
+      return
+    }
+    const next = shortcutFromEvent(e, isMac)
+    // Ignore lone modifier presses; keep waiting for the full combo.
+    if (!next) return
+    if (normalizeShortcut(value) === next) {
+      stop()
+      return
+    }
+    onChange(next)
+    stop()
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        ref={boxRef}
+        type="button"
+        onClick={() => (recording ? stop() : setRecording(true))}
+        onKeyDown={onKeyDown}
+        onBlur={() => recording && stop()}
+        className={[
+          'no-drag inline-flex h-8 min-w-[120px] items-center justify-center gap-1 rounded-lg border px-3 font-mono text-[13px]',
+          recording
+            ? 'border-accent bg-accent/10 text-zinc-800 dark:text-zinc-100'
+            : 'border-zinc-300 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200'
+        ].join(' ')}
+      >
+        {recording ? (
+          <span className="animate-pulse font-sans text-xs text-zinc-500 dark:text-zinc-400">
+            Press keys…
+          </span>
+        ) : (
+          <span>{formatShortcut(value, isMac)}</span>
+        )}
+      </button>
+      {normalizeShortcut(value) !== 'mod+b' && !recording && (
+        <Button onClick={() => onChange('mod+b')}>Reset</Button>
+      )}
+    </div>
   )
 }
 
@@ -171,11 +255,10 @@ function GeneralTab(): React.ReactElement {
 
 function AgentsTab(): React.ReactElement {
   const { agents } = useAppState()
-  const { toggleBuiltinAgent, deleteAgent } = useAppActions()
+  const { toggleBuiltinAgent, deleteAgent, reorderAgents } = useAppActions()
   const [editing, setEditing] = useState<AgentDefinition | 'new' | null>(null)
-
-  const builtins = agents.filter((a) => a.builtin)
-  const customs = agents.filter((a) => !a.builtin)
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ id: string; before: boolean } | null>(null)
 
   if (editing) {
     return editing === 'new' ? (
@@ -185,16 +268,74 @@ function AgentsTab(): React.ReactElement {
     )
   }
 
+  // agents arrive from main already in saved order — the list IS the order.
+  const commitOrder = (ids: string[]): void => {
+    void reorderAgents(ids)
+  }
+
+  const onDropRow = (e: React.DragEvent, target: AgentDefinition, before: boolean): void => {
+    e.preventDefault()
+    const id = dragId ?? e.dataTransfer.getData('text/hangar-agent-id')
+    setDragId(null)
+    setDropTarget(null)
+    if (!id || id === target.id) return
+    const ids = agents.map((a) => a.id).filter((x) => x !== id)
+    const at = ids.indexOf(target.id) + (before ? 0 : 1)
+    ids.splice(at, 0, id)
+    commitOrder(ids)
+  }
+
+  const rowProps = (agent: AgentDefinition): React.HTMLAttributes<HTMLLIElement> => ({
+    draggable: true,
+    onDragStart: (e) => {
+      setDragId(agent.id)
+      e.dataTransfer.setData('text/hangar-agent-id', agent.id)
+      e.dataTransfer.effectAllowed = 'move'
+    },
+    onDragEnd: () => {
+      setDragId(null)
+      setDropTarget(null)
+    },
+    onDragOver: (e) => {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      const rect = (e.currentTarget as HTMLLIElement).getBoundingClientRect()
+      const before = e.clientY < rect.top + rect.height / 2
+      setDropTarget((cur) =>
+        cur?.id === agent.id && cur.before === before ? cur : { id: agent.id, before }
+      )
+    },
+    onDrop: (e) => onDropRow(e, agent, dropTarget?.id === agent.id ? dropTarget.before : true)
+  })
+
+  const dropClass = (agent: AgentDefinition): string =>
+    dropTarget?.id === agent.id
+      ? dropTarget.before
+        ? 'border-t-2 border-t-accent'
+        : 'border-b-2 border-b-accent'
+      : 'border-t-2 border-t-transparent border-b-2 border-b-transparent'
+
   return (
     <section className="space-y-6">
       <div>
         <SectionTitle
-          title="Built-in agents"
-          desc="Disable the ones you never use; edit the letter(s) shown in default tab names (e.g. K_hangar)."
+          title="Agents"
+          desc="Drag rows to reorder — the same order is used in the launch picker. Disable the built-ins you never use; edit the letter(s) shown in default tab names (e.g. K_hangar)."
         />
         <ul className="mt-2 divide-y divide-zinc-100 rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-          {builtins.map((a) => (
-            <li key={a.id} className="flex items-center gap-3 px-3 py-2">
+          {agents.map((a) => (
+            <li
+              key={a.id}
+              {...rowProps(a)}
+              className={`flex items-center gap-2 px-3 py-2 ${dropClass(a)} ${dragId === a.id ? 'opacity-40' : ''}`}
+            >
+              <span
+                className="cursor-grab text-zinc-300 active:cursor-grabbing dark:text-zinc-600"
+                title="Drag to reorder"
+                aria-hidden
+              >
+                <GripVertical size={14} />
+              </span>
               <span className="min-w-0 flex-1">
                 <span
                   className={`block truncate text-[13px] font-medium ${
@@ -202,56 +343,48 @@ function AgentsTab(): React.ReactElement {
                   }`}
                 >
                   {a.name}
+                  {!a.builtin && (
+                    <span className="ml-1.5 rounded bg-zinc-100 px-1 py-px text-[10px] font-normal text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                      custom
+                    </span>
+                  )}
                 </span>
                 <span className="block truncate font-mono text-[11px] text-zinc-400">
                   {a.command}
                 </span>
               </span>
               <BuiltinLabelEditor agent={a} />
-              <Toggle
-                checked={!a.disabled}
-                label={`Enable ${a.name}`}
-                onChange={(enabled) => void toggleBuiltinAgent(a.id, !enabled)}
-              />
+              {a.builtin ? (
+                <Toggle
+                  checked={!a.disabled}
+                  label={`Enable ${a.name}`}
+                  onChange={(enabled) => void toggleBuiltinAgent(a.id, !enabled)}
+                />
+              ) : (
+                <>
+                  <IconButton label="Edit agent" onClick={() => setEditing(a)}>
+                    <Pencil size={13} />
+                  </IconButton>
+                  <IconButton label="Delete agent" danger onClick={() => void deleteAgent(a.id)}>
+                    <Trash2 size={13} />
+                  </IconButton>
+                </>
+              )}
             </li>
           ))}
         </ul>
+        {agents.some((a) => a.disabled) && (
+          <p className="mt-1.5 text-[11px] text-zinc-400">
+            Disabled agents are hidden from the launch picker.
+          </p>
+        )}
       </div>
 
       <div>
-        <div className="flex items-center justify-between">
-          <SectionTitle title="Custom agents" desc="Your own commands and wrappers." />
-          <Button className="mb-2" onClick={() => setEditing('new')}>
-            <UserPlus size={13} />
-            New agent
-          </Button>
-        </div>
-        {customs.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-zinc-300 px-3 py-4 text-center text-[13px] text-zinc-400 dark:border-zinc-700">
-            No custom agents yet.
-          </p>
-        ) : (
-          <ul className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-            {customs.map((a) => (
-              <li key={a.id} className="flex items-center gap-3 px-3 py-2">
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium text-zinc-800 dark:text-zinc-100">
-                    {a.name}
-                  </span>
-                  <span className="block truncate font-mono text-[11px] text-zinc-400">
-                    {a.command} {a.args?.join(' ') ?? ''}
-                  </span>
-                </span>
-                <IconButton label="Edit agent" onClick={() => setEditing(a)}>
-                  <Pencil size={13} />
-                </IconButton>
-                <IconButton label="Delete agent" danger onClick={() => void deleteAgent(a.id)}>
-                  <Trash2 size={13} />
-                </IconButton>
-              </li>
-            ))}
-          </ul>
-        )}
+        <Button onClick={() => setEditing('new')}>
+          <UserPlus size={13} />
+          New agent
+        </Button>
       </div>
     </section>
   )
@@ -430,7 +563,10 @@ function AgentForm({
 
       {advanced && (
         <div className="space-y-3">
-          <Field label="Environment variables" hint="One per line: KEY=value">
+          <Field
+            label="Environment variables"
+            hint="One per line: KEY=value. Values whose name contains KEY, TOKEN, SECRET, PASSWORD or AUTH are encrypted on disk and shown here only as masked dots."
+          >
             <TextArea
               value={envText}
               onChange={(e) => setEnvText(e.target.value)}
@@ -570,15 +706,48 @@ function AdvancedTab({ onDone }: { onDone(): void }): React.ReactElement {
         <p className="text-[13px] font-medium text-zinc-800 dark:text-zinc-100">Storage</p>
         <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
           Settings live in <span className="font-mono">hangar-settings.json</span> inside your
-          user data directory; repo indexes in <span className="font-mono">repo-index.lance</span>.
-          Everything stays on this machine — no network calls, no telemetry.
+          user data directory; agent secrets in the encrypted{' '}
+          <span className="font-mono">hangar-secrets.json</span>; repo indexes in{' '}
+          <span className="font-mono">repo-index.lance</span>. Everything stays on this machine —
+          no network calls, no telemetry.
         </p>
       </div>
+
+      <div className="flex items-start justify-between gap-4 rounded-xl border border-zinc-200 p-3.5 dark:border-zinc-800">
+        <div>
+          <p className="text-[13px] font-medium text-zinc-800 dark:text-zinc-100">
+            Pass launch environment to agents
+          </p>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
+            When on, every agent inherits all variables from the shell that launched Hangar. Turn
+            off to forward only essentials (PATH, HOME, locale…), so unrelated secrets in that
+            shell stay out. Agents run in a login shell that re-sources your profile either way.
+          </p>
+        </div>
+        <Toggle
+          checked={settings.passLaunchEnvToAgents}
+          onChange={(v) => void updateSettings({ passLaunchEnvToAgents: v })}
+          label="Pass launch environment to agents"
+        />
+      </div>
+
+      {settings.secretStorageEncrypted === false && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3.5 dark:border-amber-900/50 dark:bg-amber-950/20">
+          <p className="text-[13px] font-medium text-zinc-800 dark:text-zinc-100">
+            Agent secrets are not encrypted on this system
+          </p>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+            No OS keyring is available, so secret env values are stored unencrypted. Install a
+            keyring (e.g. gnome-keyring or KWallet) to protect them.
+          </p>
+        </div>
+      )}
 
       <div className="rounded-xl border border-red-200 bg-red-50/50 p-3.5 dark:border-red-900/50 dark:bg-red-950/20">
         <p className="text-[13px] font-medium text-zinc-800 dark:text-zinc-100">Reset settings</p>
         <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-          Restores defaults: root folders, custom agents, theme, fonts and window mode.
+          Restores defaults: root folders, custom agents, agent order, sidebar shortcut, theme,
+          fonts and window mode.
         </p>
         <div className="mt-2.5">
           {confirming ? (

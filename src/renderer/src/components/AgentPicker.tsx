@@ -6,10 +6,10 @@ import { isMac } from '@renderer/hooks/useTheme'
 import { Kbd, Modal, ModalHeader } from './ui'
 
 /**
- * Agent picker — opened from a repo tile. Lists enabled built-in and custom
- * agents with keyboard navigation (↑ ↓ Enter, Esc). Choosing an agent spawns
- * a terminal; the mode (tab vs window) follows settings.windowMode, with
- * ⌘/Ctrl-click flipping it when the mode is 'both'.
+ * Agent picker — opened from a repo tile. Lists enabled agents in the user's
+ * saved order (Settings → Agents) with keyboard navigation (↑ ↓ Enter, Esc).
+ * Choosing an agent spawns a terminal; the mode (tab vs window) follows
+ * settings.windowMode, with ⌘/Ctrl-click always forcing a new window.
  */
 
 function AgentGlyph({ agent }: { agent: AgentDefinition }): React.ReactElement {
@@ -51,26 +51,24 @@ export function AgentPicker({
   const [error, setError] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
-  const { builtins, customs } = useMemo(() => {
+  // Agents arrive from main in the user's saved order; filter (never
+  // re-sort) so the picker, grid, and Settings list all agree.
+  const flat = useMemo(() => {
     const enabled = agents.filter((a) => !a.disabled)
     const q = query.trim().toLowerCase()
-    const match = (a: AgentDefinition): boolean =>
-      !q || a.name.toLowerCase().includes(q) || a.command.toLowerCase().includes(q)
-    return {
-      builtins: enabled.filter((a) => a.builtin && match(a)),
-      customs: enabled.filter((a) => !a.builtin && match(a))
-    }
+    if (!q) return enabled
+    return enabled.filter(
+      (a) => a.name.toLowerCase().includes(q) || a.command.toLowerCase().includes(q)
+    )
   }, [agents, query])
-
-  const flat = useMemo(() => [...builtins, ...customs], [builtins, customs])
   useEffect(() => setCursor(0), [query])
 
-  const launch = async (agent: AgentDefinition, flipMode: boolean): Promise<void> => {
+  const launch = async (agent: AgentDefinition, openInWindow: boolean): Promise<void> => {
     const windowMode = settings?.windowMode ?? 'both'
-    const base: 'tab' | 'window' = windowMode === 'windows' ? 'window' : 'tab'
-    const mode = flipMode && windowMode !== 'tabs' && windowMode !== 'windows'
-      ? base === 'tab' ? 'window' : 'tab'
-      : base
+    // ⌘/Ctrl-click always opens a new window, in every mode; plain click
+    // follows the windowMode setting (tabs for 'tabs'/'both', window for 'windows').
+    const mode: 'tab' | 'window' =
+      openInWindow || windowMode === 'windows' ? 'window' : 'tab'
     try {
       setError(null)
       await spawnTerminal({ repoTileId: tile.id, agentId: agent.id, mode }, tile)
@@ -102,49 +100,35 @@ export function AgentPicker({
     listRef.current?.querySelector('[data-cursor="true"]')?.scrollIntoView({ block: 'nearest' })
   }, [cursor])
 
-  const renderGroup = (label: string, group: AgentDefinition[], offset: number): React.ReactElement | null =>
-    group.length === 0 ? null : (
-      <div>
-        <p className="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-          {label}
-        </p>
-        {group.map((agent, i) => {
-          const idx = offset + i
-          const isCursor = idx === cursor
-          return (
-            <button
-              key={agent.id}
-              type="button"
-              data-cursor={isCursor}
-              onMouseEnter={() => setCursor(idx)}
-              onClick={(e) => void launch(agent, e.metaKey || e.ctrlKey)}
-              className={[
-                'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors',
-                isCursor ? 'bg-accent/10' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800/70'
-              ].join(' ')}
-            >
-              <AgentGlyph agent={agent} />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-medium text-zinc-800 dark:text-zinc-100">
-                  {agent.name}
-                </span>
-                <span className="block truncate font-mono text-[11px] text-zinc-400 dark:text-zinc-500">
-                  {agent.command}
-                  {agent.args && agent.args.length > 0 ? ` ${agent.args.join(' ')}` : ''}
-                </span>
-              </span>
-            </button>
-          )
-        })}
-      </div>
+  const renderRow = (agent: AgentDefinition, idx: number): React.ReactElement => {
+    const isCursor = idx === cursor
+    return (
+      <button
+        key={agent.id}
+        type="button"
+        data-cursor={isCursor}
+        onMouseEnter={() => setCursor(idx)}
+        onClick={(e) => void launch(agent, e.metaKey || e.ctrlKey)}
+        className={[
+          'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors',
+          isCursor ? 'bg-accent/10' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800/70'
+        ].join(' ')}
+      >
+        <AgentGlyph agent={agent} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-medium text-zinc-800 dark:text-zinc-100">
+            {agent.name}
+          </span>
+          <span className="block truncate font-mono text-[11px] text-zinc-400 dark:text-zinc-500">
+            {agent.command}
+            {agent.args && agent.args.length > 0 ? ` ${agent.args.join(' ')}` : ''}
+          </span>
+        </span>
+      </button>
     )
+  }
 
-  const modeHint =
-    settings?.windowMode === 'windows'
-      ? 'Opens in a new window'
-      : settings?.windowMode === 'tabs'
-        ? 'Opens in a tab'
-        : `Opens in a tab · ${isMac ? '⌘' : 'Ctrl'}-click for a new window`
+  const modeHint = `Opens in a ${settings?.windowMode === 'windows' ? 'new window' : 'tab'} · ${isMac ? '⌘' : 'Ctrl'}-click for a new window`
 
   return (
     <Modal onClose={onClose} width="max-w-sm" labelledBy="agent-picker-title">
@@ -176,16 +160,13 @@ export function AgentPicker({
         </div>
       </div>
 
-      <div ref={listRef} className="max-h-[46vh] overflow-y-auto px-1.5 pb-1">
+      <div ref={listRef} className="max-h-[46vh] overflow-y-auto px-1.5 pb-1 pt-1">
         {flat.length === 0 ? (
           <p className="px-3 py-6 text-center text-[13px] text-zinc-400">
             {agents.length === 0 ? 'No agents configured.' : 'No agents match your search.'}
           </p>
         ) : (
-          <>
-            {renderGroup('Built-in', builtins, 0)}
-            {renderGroup('Custom', customs, builtins.length)}
-          </>
+          flat.map((agent, idx) => renderRow(agent, idx))
         )}
         {agents.some((a) => a.disabled) && (
           <p className="flex items-center gap-1.5 px-3 pb-2 pt-1 text-[11px] text-zinc-400">

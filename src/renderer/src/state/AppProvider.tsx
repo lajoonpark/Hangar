@@ -276,6 +276,8 @@ export interface AppActions {
   toggleBuiltinAgent(id: string, disabled: boolean): Promise<void>
   /** Change the tab-label prefix for any agent (persisted in settings). */
   setAgentTabLabel(agentId: string, label: string): Promise<void>
+  /** Persist the unified agent display order (built-in + custom ids). */
+  reorderAgents(agentIds: string[]): Promise<void>
   reindexRepo(tileId: string): Promise<void>
   removeIndex(tileId: string): Promise<void>
   /** Spawn a terminal; in tab modes the session is registered in this window. */
@@ -463,6 +465,10 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
       },
       async setAgentTabLabel(agentId, label) {
         await hangar.setAgentTabLabel(agentId, label)
+        dispatch({ type: 'agents', agents: await hangar.listAgents() })
+      },
+      async reorderAgents(agentIds) {
+        dispatch({ type: 'settings', settings: await hangar.setSettings({ agentOrder: agentIds }) })
         dispatch({ type: 'agents', agents: await hangar.listAgents() })
       },
       async reindexRepo(tileId) {

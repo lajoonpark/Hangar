@@ -26,6 +26,10 @@ if (!gotLock) {
   })
 
   void app.whenReady().then(() => {
+    // safeStorage requires the app to be ready; this also migrates any secret
+    // env values still sitting in the plaintext settings file.
+    settingsService.initSecrets()
+
     registerIpcHandlers()
 
     // Warm caches: settings, roots, agents

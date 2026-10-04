@@ -7,6 +7,8 @@ import {
   NewAgentPayload,
   Result
 } from '@shared/types'
+import { maskEnv, splitIncomingEnv } from './agentEnv'
+import { secretsService } from './secrets'
 import { settingsService } from './settings'
 
 /**
@@ -14,38 +16,79 @@ import { settingsService } from './settings'
  * user-defined agents persisted in settings.
  */
 
-function toDefinition(a: CustomAgent, builtin: boolean, disabled = false): AgentDefinition {
+/** Renderer-facing definition — secret env values are masked, never sent. */
+function toDto(a: CustomAgent, builtin: boolean, disabled = false): AgentDefinition {
+  const secretKeys = builtin ? [] : secretsService.keys(a.id)
   return {
     ...a,
+    env: builtin ? (a.env ?? {}) : maskEnv(a.id, a.env),
     builtin,
     disabled: builtin ? disabled : undefined,
-    tabLabel: effectiveTabLabel(a.id, a.name, settingsService.get().agentTabLabels)
+    tabLabel: effectiveTabLabel(a.id, a.name, settingsService.get().agentTabLabels),
+    secretKeys: secretKeys.length > 0 ? secretKeys : undefined
   }
 }
 
 class AgentService {
   /**
-   * All agents available to the picker: built-ins (unless disabled) then
-   * user-defined, in creation order.
+   * Order agents by the user's saved `agentOrder` (agent ids). Entries are
+   * matched in stored order; agents missing from the list keep their default
+   * relative order (built-ins first in BUILTIN_AGENTS order, then customs in
+   * creation order) appended after. Unknown ids are ignored.
+   */
+  private applyOrder(agents: AgentDefinition[]): AgentDefinition[] {
+    const rank = new Map<string, number>()
+    settingsService.get().agentOrder.forEach((id, i) => {
+      if (!rank.has(id)) rank.set(id, i)
+    })
+    return [...agents].sort((a, b) => {
+      const ra = rank.get(a.id) ?? Number.MAX_SAFE_INTEGER
+      const rb = rank.get(b.id) ?? Number.MAX_SAFE_INTEGER
+      if (ra !== rb) return ra - rb
+      return 0
+    })
+  }
+
+  private allDtos(): AgentDefinition[] {
+    const disabled = new Set(settingsService.get().disabledBuiltinAgents)
+    const builtins = BUILTIN_AGENTS.map((a) => toDto(a, true, disabled.has(a.id)))
+    const customs = settingsService.get().customAgents.map((a) => toDto(a, false))
+    return this.applyOrder([...builtins, ...customs])
+  }
+
+  /**
+   * All agents available to the picker (enabled only), in the user's saved
+   * `agentOrder` (see `applyOrder`).
    */
   list(): AgentDefinition[] {
-    const disabled = new Set(settingsService.get().disabledBuiltinAgents)
-    const builtins = BUILTIN_AGENTS.map((a) => toDefinition(a, true, disabled.has(a.id)))
-    const customs = settingsService.get().customAgents.map((a) => toDefinition(a, false))
-    return [...builtins.filter((a) => !a.disabled), ...customs]
+    return this.allDtos().filter((a) => !a.disabled)
   }
 
   /** Every agent incl. disabled built-ins (settings UI needs full list). */
   listAll(): AgentDefinition[] {
-    const disabled = new Set(settingsService.get().disabledBuiltinAgents)
-    const builtins = BUILTIN_AGENTS.map((a) => toDefinition(a, true, disabled.has(a.id)))
-    const customs = settingsService.get().customAgents.map((a) => toDefinition(a, false))
-    return [...builtins, ...customs]
+    return this.allDtos()
   }
 
-  /** Resolve one agent by id (builtin or custom). */
+  /**
+   * Resolve one agent by id (builtin or custom) with its FULL env — secret
+   * values included. This is the internal path used by the PTY spawner; it is
+   * never exposed over IPC.
+   */
   byId(agentId: string): AgentDefinition | undefined {
-    return this.listAll().find((a) => a.id === agentId)
+    const settings = settingsService.get()
+    const builtin = BUILTIN_AGENTS.find((a) => a.id === agentId)
+    const raw = builtin ?? settings.customAgents.find((a) => a.id === agentId)
+    if (!raw) return undefined
+    const disabled = builtin ? settings.disabledBuiltinAgents.includes(agentId) : undefined
+    return {
+      ...raw,
+      env: builtin
+        ? (raw.env ?? {})
+        : { ...(raw.env ?? {}), ...secretsService.getAll(agentId) },
+      builtin: !!builtin,
+      disabled,
+      tabLabel: effectiveTabLabel(raw.id, raw.name, settings.agentTabLabels)
+    }
   }
 
   /**
@@ -72,22 +115,27 @@ class AgentService {
     if (errors.length > 0) return { ok: false, error: errors.join('; ') }
 
     const agentId = randomUUID()
+    const { plainEnv, secrets } = splitIncomingEnv(agentId, payload.env)
     const agent: CustomAgent = {
       id: agentId,
       name: payload.name.trim(),
       command: payload.command.trim(),
       args: Array.isArray(payload.args) ? payload.args.map(String) : [],
-      env: payload.env && typeof payload.env === 'object' ? { ...payload.env } : {},
+      env: plainEnv,
       useShell: payload.useShell !== false,
       workingDirOverride: payload.workingDirOverride || undefined
     }
+    secretsService.replaceAll(agentId, secrets)
     const settings = settingsService.get()
     const result = settingsService.update({
       customAgents: [...settings.customAgents, agent],
       agentTabLabels: this.mergedLabels(settings.agentTabLabels, agentId, payload.tabLabel ?? '')
     })
-    if (!result.ok) return { ok: false, error: result.error }
-    return { ok: true, data: toDefinition(agent, false) }
+    if (!result.ok) {
+      secretsService.removeAgent(agentId)
+      return { ok: false, error: result.error }
+    }
+    return { ok: true, data: toDto(agent, false) }
   }
 
   update(agent: AgentDefinition): Result<void> {
@@ -95,12 +143,14 @@ class AgentService {
     const settings = settingsService.get()
     const idx = settings.customAgents.findIndex((a) => a.id === agent.id)
     if (idx === -1) return { ok: false, error: `unknown agent: ${agent.id}` }
+    const { plainEnv, secrets } = splitIncomingEnv(agent.id, agent.env)
+    secretsService.replaceAll(agent.id, secrets)
     const updated: CustomAgent = {
       id: agent.id,
       name: agent.name?.trim() || settings.customAgents[idx].name,
       command: agent.command?.trim() || settings.customAgents[idx].command,
       args: Array.isArray(agent.args) ? agent.args.map(String) : [],
-      env: agent.env && typeof agent.env === 'object' ? { ...agent.env } : {},
+      env: plainEnv,
       useShell: agent.useShell !== false,
       workingDirOverride: agent.workingDirOverride || undefined
     }
@@ -130,6 +180,7 @@ class AgentService {
     if (idx === -1) return { ok: false, error: `unknown agent: ${agentId}` }
     const next = settings.customAgents.filter((a) => a.id !== agentId)
     const result = settingsService.update({ customAgents: next })
+    if (result.ok) secretsService.removeAgent(agentId)
     return result.ok ? { ok: true } : { ok: false, error: result.error }
   }
 

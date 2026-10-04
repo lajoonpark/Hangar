@@ -15,6 +15,7 @@ import { IPC } from '@shared/ipc'
 import { agentService } from './agents'
 import { repoIndexService } from './repoIndex'
 import { scannerService } from './scanner'
+import { settingsService } from './settings'
 
 /**
  * PTY session manager — one node-pty process per terminal session.
@@ -121,8 +122,9 @@ class PtyManager extends EventEmitter {
       this.broadcast(IPC.gridInvalidate, { reason: 'repo-opened', tileId: tile.id })
     }
 
-    // Windows mode opens its own window; the renderer will call
-    // window:create if needed — spawn() returns ownership info either way.
+    // Windows mode is owned by a dedicated terminal window: the IPC handler
+    // spawns the PTY first, then opens the window with the sessionId in its
+    // query params so it attaches immediately.
     return { sessionId, windowId: req.windowId ?? 'active', title }
   }
 
@@ -131,8 +133,15 @@ class PtyManager extends EventEmitter {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const nodePty = require('node-pty') as typeof import('node-pty')
 
+    // By default every agent inherits Hangar's full environment. When the user
+    // opts out, forward only the vars a CLI needs to find its runtime so any
+    // secrets exported in the launching shell don't reach third-party agents.
+    const inherited = settingsService.get().passLaunchEnvToAgents
+      ? (process.env as Record<string, string>)
+      : allowlistedEnv(process.env)
+
     const env: Record<string, string> = {
-      ...process.env as Record<string, string>,
+      ...inherited,
       ...agent.env,
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
@@ -333,6 +342,32 @@ function extractOscTitle(state: OscParserState, chunk: string): string | null {
     idx = end + terminator
   }
   return result
+}
+
+/**
+ * Vars forwarded to a PTY when the user turns off full environment
+ * inheritance. Kept to what a CLI needs to bootstrap (runtime lookup, locale,
+ * display) so unrelated secrets in the launching shell stay out.
+ */
+const ENV_ALLOWLIST = new Set([
+  'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TERM', 'LANG', 'TMPDIR', 'TMP',
+  'TEMP', 'TZ', 'PWD', 'DISPLAY', 'WAYLAND_DISPLAY', 'SSH_AUTH_SOCK', 'COLORTERM',
+  // Windows
+  'SystemRoot', 'ComSpec', 'PATHEXT', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA',
+  'PROGRAMDATA', 'NUMBER_OF_PROCESSORS', 'OS', 'PROCESSOR_ARCHITECTURE',
+  'ProgramFiles', 'ProgramFiles(x86)'
+])
+const ENV_ALLOW_PREFIXES = ['LC_', 'XDG_']
+
+function allowlistedEnv(source: NodeJS.ProcessEnv): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined) continue
+    if (ENV_ALLOWLIST.has(key) || ENV_ALLOW_PREFIXES.some((p) => key.startsWith(p))) {
+      out[key] = value
+    }
+  }
+  return out
 }
 
 function existsInPath(file: string): boolean {

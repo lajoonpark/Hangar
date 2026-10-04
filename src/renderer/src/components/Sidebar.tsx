@@ -1,7 +1,9 @@
 import { PanelLeftClose, Plus, RefreshCw } from 'lucide-react'
 import { useMemo } from 'react'
 import type { RepoTile as RepoTileData } from '@shared/types'
+import { formatShortcut } from '@shared/types'
 import { useAppActions, useAppState } from '@renderer/state/AppProvider'
+import { isMac } from '@renderer/hooks/useTheme'
 import { Button, IconButton, Segmented } from './ui'
 import { useTileFilter } from './RepoGrid'
 import { RepoTile, ScanningBadge } from './RepoTile'
@@ -25,11 +27,12 @@ export function Sidebar({
   const isScanning = Object.keys(scanning).length > 0
   // Repos that currently have at least one open session → green "open" tick
   const openIds = useMemo(() => new Set(sessions.map((s) => s.repoTileId)), [sessions])
+  const sidebarHint = `Toggle sidebar (${formatShortcut(settings?.sidebarShortcut ?? 'mod+b', isMac)})`
 
   if (collapsed) {
     return (
       <aside className="flex w-11 shrink-0 flex-col items-center gap-2 border-r border-zinc-200/80 bg-zinc-50/60 py-2 dark:border-zinc-800/80 dark:bg-zinc-950/60">
-        <IconButton label="Show repositories" onClick={onToggle}>
+        <IconButton label={`Show repositories — ${sidebarHint}`} onClick={onToggle}>
           <PanelLeftClose size={15} className="rotate-180" />
         </IconButton>
       </aside>
@@ -45,7 +48,7 @@ export function Sidebar({
           </h2>
           {isScanning && <ScanningBadge />}
         </div>
-        <IconButton label="Hide sidebar" onClick={onToggle}>
+        <IconButton label={`Hide sidebar — ${sidebarHint}`} onClick={onToggle}>
           <PanelLeftClose size={15} />
         </IconButton>
       </div>

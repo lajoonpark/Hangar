@@ -29,6 +29,11 @@ import type {
  */
 export interface HangarApi {
   // ── settings ──────────────────────────────────────────────────────────
+  /**
+   * All settings. Secret custom-agent env values are returned as `SECRET_MASK`
+   * (never the real value); `secretStorageEncrypted` reports whether the OS
+   * encryption backend is available.
+   */
   getSettings(): Promise<AppSettings>
   setSettings(partial: Partial<AppSettings>): Promise<AppSettings>
   resetSettings(): Promise<AppSettings>
@@ -46,6 +51,10 @@ export interface HangarApi {
   scanAllFolders(): Promise<void>
 
   // ── agents ────────────────────────────────────────────────────────────
+  /**
+   * All agents. Custom-agent secret env values are masked (`SECRET_MASK`) and
+   * listed in `secretKeys`; the real values never reach the renderer.
+   */
   listAgents(): Promise<AgentDefinition[]>
   addAgent(payload: NewAgentPayload): Promise<AgentDefinition>
   updateAgent(agent: AgentDefinition): Promise<void>
