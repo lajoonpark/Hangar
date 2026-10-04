@@ -3,6 +3,10 @@ dist
 out
 .DS_Store
 *.tsbuildinfo
+.commandcode/
+.kilo/
+HANDOFF_PROMPT.md
+session-*.md
 
 # ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====
 .git/
