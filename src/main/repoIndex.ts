@@ -73,10 +73,10 @@ const TEXT_EXTS = new Set([
   'c', 'h', 'cpp', 'hpp', 'cc', 'hh', 'm', 'mm', 'cs', 'dart', 'zig',
   'php', 'lua', 'pl', 'pm', 'ex', 'exs', 'erl', 'hrl', 'clj', 'cljs',
   'sh', 'bash', 'zsh', 'fish', 'ps1', 'bat', 'cmd',
-  'yml', 'yaml', 'toml', 'ini', 'cfg', 'conf', 'properties', 'env',
+  'yml', 'yaml', 'toml', 'ini', 'cfg', 'conf', 'properties',
   'css', 'scss', 'sass', 'less', 'styl',
   'html', 'htm', 'vue', 'svelte', 'astro', 'ejs', 'hbs', 'liquid',
-  'sql', 'graphql', 'gql', 'proto', 'tf', 'tfvars', 'hcl',
+  'sql', 'graphql', 'gql', 'proto', 'tf', 'hcl',
   'xml', 'svg', 'csv', 'tsv', 'gradle', 'groovy', 'cmake', 'dockerfile',
   'lock', 'sum', 'mod', 'gemspec', 'podspec'
 ])
@@ -84,7 +84,7 @@ const TEXT_EXTS = new Set([
 const TEXT_FILENAMES = new Set([
   'dockerfile', 'makefile', 'cmakelists.txt', 'rakefile', 'gemfile',
   'procfile', 'vagrantfile', 'justfile', '.gitignore', '.gitattributes',
-  '.editorconfig', '.npmrc', '.nvmrc', '.babelrc', '.eslintrc',
+  '.editorconfig', '.nvmrc', '.babelrc', '.eslintrc',
   '.prettierrc', '.dockerignore', 'license', 'license.md', 'license.txt',
   'readme', 'readme.md', 'changes', 'changelog', 'changelog.md', 'notice'
 ])
@@ -100,7 +100,29 @@ function langOf(name: string): string {
   return extOf(name) || 'text'
 }
 
+/**
+ * Files that commonly hold credentials — never indexed, so their contents are
+ * not persisted to `repo-index.lance` or returned by search. Covers the
+ * dotfiles (already excluded) plus the non-dot cases like `prod.env`.
+ */
+const SECRET_FILENAMES = new Set([
+  '.env', '.netrc', '.pgpass', '.git-credentials', '.npmrc', 'credentials',
+  'id_rsa', 'id_dsa', 'id_ecdsa', 'id_ed25519'
+])
+const SECRET_EXTS = new Set([
+  'env', 'pem', 'key', 'p12', 'pfx', 'keystore', 'jks', 'ppk', 'asc', 'gpg',
+  'der', 'crt', 'cer'
+])
+
+function isSecretFile(name: string): boolean {
+  const lower = name.toLowerCase()
+  if (SECRET_FILENAMES.has(lower)) return true
+  if (lower.startsWith('.env') || lower.startsWith('secrets.')) return true
+  return SECRET_EXTS.has(extOf(lower))
+}
+
 function isTextFile(name: string): boolean {
+  if (isSecretFile(name)) return false
   if (name.startsWith('.') && TEXT_FILENAMES.has(name.toLowerCase())) return true
   if (!name.includes('.')) return TEXT_FILENAMES.has(name.toLowerCase())
   return TEXT_EXTS.has(extOf(name))

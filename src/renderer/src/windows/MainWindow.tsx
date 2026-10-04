@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, RefreshCw } from 'lucide-react'
 import type { RepoTile } from '@shared/types'
+import { shortcutMatches } from '@shared/types'
 import { useAppActions, useAppState } from '@renderer/state/AppProvider'
 import { useResolvedTheme, isMac } from '@renderer/hooks/useTheme'
 import { TitleBar } from '@renderer/components/TitleBar'
@@ -38,26 +39,32 @@ export function MainWindow(): React.ReactElement {
     })
   }, [sessions])
 
-  // Global shortcuts: ⌘, settings · ⌘W close tab · ⌘B sidebar
+  // Global shortcuts: ⌘, settings · ⌘W close tab · sidebar toggle (rebindable in Settings)
+  // Fixed shortcuts win over the rebindable one (e.g. recording ⌘W keeps closing tabs).
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (!(isMac ? e.metaKey : e.ctrlKey)) return
-      const key = e.key.toLowerCase()
-      if (key === ',') {
-        e.preventDefault()
-        setSettingsOpen('general')
-      } else if (key === 'w' && activeId) {
-        e.preventDefault()
-        setActiveId(null)
-        void closeTab(activeId)
-      } else if (key === 'b' && hasSessions) {
+      if (isMac ? e.metaKey : e.ctrlKey) {
+        const key = e.key.toLowerCase()
+        if (key === ',') {
+          e.preventDefault()
+          setSettingsOpen('general')
+          return
+        }
+        if (key === 'w' && activeId) {
+          e.preventDefault()
+          setActiveId(null)
+          void closeTab(activeId)
+          return
+        }
+      }
+      if (hasSessions && shortcutMatches(e, settings?.sidebarShortcut ?? 'mod+b', isMac)) {
         e.preventDefault()
         setSidebarCollapsed((c) => !c)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [activeId, hasSessions, closeTab])
+  }, [activeId, hasSessions, closeTab, settings?.sidebarShortcut])
 
   if (!ready) {
     return (

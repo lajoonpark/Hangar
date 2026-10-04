@@ -33,18 +33,23 @@ export function registerIpcHandlers(): void {
   repoIndexService.setBroadcast((ch, payload) => windowManager.broadcast(ch, payload))
 
   // ── settings ──────────────────────────────────────────────────────────
-  ipcMain.handle(IPC.settingsGet, () => wrap(() => settingsService.get()))
+  ipcMain.handle(IPC.settingsGet, () => wrap(() => settingsService.getRedacted()))
 
   ipcMain.handle(IPC.settingsSet, (_e, partial: Record<string, unknown>) => {
     const result = settingsService.update(partial as never)
-    if (result.ok) {
-      // Settings changed → other windows should re-read (theme, sort, agents…)
-      windowManager.broadcast(IPC.gridInvalidate, { reason: 'settings-changed' })
-    }
-    return result
+    if (!result.ok) return result
+    // Settings changed → other windows should re-read (theme, sort, agents…)
+    windowManager.broadcast(IPC.gridInvalidate, { reason: 'settings-changed' })
+    // Return the redacted view so the renderer never receives secret values.
+    return { ok: true, data: settingsService.getRedacted() }
   })
 
-  ipcMain.handle(IPC.settingsReset, () => wrap(() => settingsService.reset()))
+  ipcMain.handle(IPC.settingsReset, () =>
+    wrap(() => {
+      settingsService.reset()
+      return settingsService.getRedacted()
+    })
+  )
 
   // ── folders ───────────────────────────────────────────────────────────
   ipcMain.handle(IPC.foldersAdd, (e) =>
@@ -178,10 +183,13 @@ export function registerIpcHandlers(): void {
         req.mode ?? (settings.windowMode === 'windows' ? 'window' : 'tab')
 
       if (mode === 'window') {
-        // Create the owning window first so the renderer boots with the
-        // sessionId in its query params and can attach immediately.
-        const windowId = windowManager.create('terminal')
-        return await ptyManager.spawn({ ...req, mode, windowId })
+        // Spawn the PTY first so we know the sessionId, then open the window
+        // with ?sessionId=&windowId= so it boots straight into TerminalWindow.
+        // (Creating the window first left it with no sessionId, so it booted
+        // an empty main window with no terminal.)
+        const spawned = await ptyManager.spawn({ ...req, mode, windowId: 'pending' })
+        const windowId = windowManager.create('terminal', spawned.sessionId)
+        return { ...spawned, windowId }
       }
 
       const senderWindow = [...windowManager.all()].find((w) => w.win.webContents === e.sender)

@@ -26,6 +26,34 @@ export interface AppSettings {
    * default or first letter of the agent name.
    */
   agentTabLabels: Record<string, string>
+  /**
+   * When true (default), every spawned agent PTY inherits Hangar's full
+   * process environment. When false, only an allowlist of essential vars is
+   * forwarded (PATH/HOME/TERM/LANG/XDG_*…), so secrets exported in the shell
+   * that launched Hangar do not leak into agents. Note: shell-mode agents
+   * still spawn a login+interactive shell, which re-sources ~/.zprofile and
+   * ~/.zshrc — so the tightening is strongest for direct (useShell: false)
+   * spawns.
+   */
+  passLaunchEnvToAgents: boolean
+  /**
+   * Unified display order for agents (built-in + custom) as agent ids.
+   * Applied by the main process to agent lists; ids missing from the array
+   * keep their default relative order (built-ins in BUILTIN_AGENTS order,
+   * then customs in creation order), unknown ids are ignored.
+   */
+  agentOrder: string[]
+  /**
+   * Sidebar toggle shortcut, normalized as `+`-joined parts (e.g. `mod+b`).
+   * `mod` means ⌘ on macOS and Ctrl elsewhere. Recorded in Settings.
+   */
+  sidebarShortcut: string
+  /**
+   * Main-process-populated status (never persisted, ignored on update): true
+   * when the OS provides an encryption backend for the secrets store. The
+   * renderer uses it to warn when agent secrets are stored unencrypted.
+   */
+  secretStorageEncrypted?: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -38,7 +66,163 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalFontFamily: 'Menlo, Consolas, monospace',
   disabledBuiltinAgents: [],
   repoIndexEnabled: true,
-  agentTabLabels: {}
+  agentTabLabels: {},
+  passLaunchEnvToAgents: true,
+  agentOrder: [],
+  sidebarShortcut: 'mod+b'
+}
+
+/** Default sidebar toggle: ⌘B on macOS, Ctrl+B elsewhere (`mod` = primary). */
+export const DEFAULT_SIDEBAR_SHORTCUT = 'mod+b'
+
+// ── Sidebar shortcut helpers ─────────────────────────────────────────────
+
+/**
+ * Normalized shortcut grammar: 1+ modifiers + one key, `+`-joined and
+ * lowercase (e.g. `mod+b`, `mod+shift+p`). `mod` is the primary modifier
+ * (⌘ on macOS, Ctrl elsewhere); `ctrl`/`meta` are the physical keys.
+ */
+export function normalizeShortcut(input: unknown): string | null {
+  if (typeof input !== 'string') return null
+  const parts = input
+    .split('+')
+    .map((p) => p.trim().toLowerCase())
+    .filter(Boolean)
+  if (parts.length < 2) return null
+  const key = parts[parts.length - 1]
+  if (!/^[a-z0-9]$/.test(key) && !/^f([1-9]|1\d|2[0-4])$/.test(key)) return null
+  const mods: string[] = []
+  for (const raw of parts.slice(0, -1)) {
+    const mod = canonicalShortcutMod(raw)
+    if (!mod || mods.includes(mod)) return null
+    mods.push(mod)
+  }
+  if (mods.length === 0) return null
+  const order = ['mod', 'ctrl', 'meta', 'alt', 'shift']
+  mods.sort((a, b) => order.indexOf(a) - order.indexOf(b))
+  return [...mods, key].join('+')
+}
+
+function canonicalShortcutMod(part: string): string | null {
+  switch (part) {
+    case 'mod':
+    case 'cmd':
+    case 'command':
+    case '⌘':
+      return 'mod'
+    case 'ctrl':
+    case 'control':
+    case '⌃':
+      return 'ctrl'
+    case 'meta':
+    case 'win':
+    case 'super':
+      return 'meta'
+    case 'alt':
+    case 'option':
+    case '⌥':
+      return 'alt'
+    case 'shift':
+    case '⇧':
+      return 'shift'
+    default:
+      return null
+  }
+}
+
+export interface ShortcutEventLike {
+  key: string
+  metaKey: boolean
+  ctrlKey: boolean
+  altKey: boolean
+  shiftKey: boolean
+}
+
+/** Build a normalized shortcut from a keydown event (Settings recorder). */
+export function shortcutFromEvent(e: ShortcutEventLike, isMac: boolean): string | null {
+  const key = (e.key ?? '').toLowerCase()
+  if (!key || ['meta', 'control', 'alt', 'shift'].includes(key)) return null
+  if (!/^[a-z0-9]$/.test(key) && !/^f([1-9]|1\d|2[0-4])$/.test(key)) return null
+  const mods: string[] = []
+  if (isMac) {
+    if (e.metaKey) mods.push('mod')
+    if (e.ctrlKey) mods.push('ctrl')
+  } else {
+    if (e.ctrlKey) mods.push('mod')
+    if (e.metaKey) mods.push('meta')
+  }
+  if (e.altKey) mods.push('alt')
+  if (e.shiftKey) mods.push('shift')
+  if (mods.length === 0) return null
+  return normalizeShortcut([...mods, key].join('+'))
+}
+
+/** Exact-match a keydown event against a stored shortcut. */
+export function shortcutMatches(
+  e: ShortcutEventLike,
+  shortcut: string,
+  isMac: boolean
+): boolean {
+  const norm = normalizeShortcut(shortcut)
+  if (!norm) return false
+  const parts = norm.split('+')
+  const key = parts[parts.length - 1]
+  if ((e.key ?? '').toLowerCase() !== key) return false
+  const mods = new Set(parts.slice(0, -1))
+  const wantAlt = mods.has('alt')
+  const wantShift = mods.has('shift')
+  if (isMac) {
+    if (e.metaKey !== (mods.has('mod') || mods.has('meta'))) return false
+    if (e.ctrlKey !== mods.has('ctrl')) return false
+  } else {
+    if (e.ctrlKey !== (mods.has('mod') || mods.has('ctrl'))) return false
+    if (e.metaKey !== mods.has('meta')) return false
+  }
+  if (e.altKey !== wantAlt || e.shiftKey !== wantShift) return false
+  return true
+}
+
+/** Human-readable shortcut: `⌘B` on macOS, `Ctrl+B` elsewhere. */
+export function formatShortcut(shortcut: string, isMac: boolean): string {
+  const norm = normalizeShortcut(shortcut) ?? DEFAULT_SIDEBAR_SHORTCUT
+  const parts = norm.split('+')
+  const key = parts[parts.length - 1].toUpperCase()
+  const mods = parts.slice(0, -1)
+  if (isMac) {
+    const sym: Record<string, string> = {
+      mod: '⌘',
+      ctrl: '⌃',
+      meta: '⌘',
+      alt: '⌥',
+      shift: '⇧'
+    }
+    return mods.map((m) => sym[m] ?? m).join('') + key
+  }
+  const word: Record<string, string> = {
+    mod: 'Ctrl',
+    ctrl: 'Ctrl',
+    meta: 'Win',
+    alt: 'Alt',
+    shift: 'Shift'
+  }
+  return [...mods.map((m) => word[m] ?? m), key].join('+')
+}
+
+// ── Secrets ───────────────────────────────────────────────────────────────────
+
+/**
+ * Placeholder shown in the env editor in place of a stored secret value.
+ * A value equal to this string (for a secret-classified key) means "keep the
+ * value already stored" rather than "store these bullets literally".
+ */
+export const SECRET_MASK = '••••••••••••'
+
+/**
+ * Heuristic: env keys that look like credentials are stored encrypted and are
+ * never sent back to the renderer. Deliberately name-based so it needs no UI.
+ */
+export function isSecretKey(key: string): boolean {
+  return /(KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|CREDENTIAL|AUTH|PRIVATE)/i.test(key)
 }
 
 // ── Agents ──────────────────────────────────────────────────────────────────
@@ -62,6 +246,12 @@ export interface AgentDefinition extends CustomAgent {
    * first letter of the agent name. Set by the main process.
    */
   tabLabel: string
+  /**
+   * Names of env keys whose values live in the encrypted secrets store. The
+   * corresponding `env` entries carry `SECRET_MASK` instead of the value —
+   * secret values are never sent to the renderer. Set by the main process.
+   */
+  secretKeys?: string[]
 }
 
 export const BUILTIN_AGENTS: CustomAgent[] = [

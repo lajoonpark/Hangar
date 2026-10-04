@@ -1,5 +1,17 @@
 import Store from 'electron-store'
-import { AppSettings, BUILTIN_AGENTS, CustomAgent, DEFAULT_SETTINGS, Result } from '@shared/types'
+import {
+  AppSettings,
+  BUILTIN_AGENTS,
+  CustomAgent,
+  DEFAULT_SETTINGS,
+  DEFAULT_SIDEBAR_SHORTCUT,
+  isSecretKey,
+  normalizeShortcut,
+  Result,
+  SECRET_MASK
+} from '@shared/types'
+import { maskEnv, stripSecretKeys } from './agentEnv'
+import { secretsService } from './secrets'
 
 /**
  * Settings persistence backed by electron-store (JSON in userData).
@@ -8,7 +20,7 @@ import { AppSettings, BUILTIN_AGENTS, CustomAgent, DEFAULT_SETTINGS, Result } fr
  * and extend `migrations` so existing users upgrade transparently.
  */
 
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 5
 
 type StoredSettings = AppSettings & { __schemaVersion: number }
 
@@ -24,6 +36,22 @@ const migrations: Record<number, (prev: Record<string, unknown>) => StoredSettin
   2: (prev) => {
     const next = { ...DEFAULT_SETTINGS, ...(prev as object) } as StoredSettings
     next.repoIndexEnabled = true
+    next.__schemaVersion = SCHEMA_VERSION
+    return next
+  },
+  // v3 → v4: added passLaunchEnvToAgents. Secret env values are moved out of
+  // this plaintext file into the encrypted secrets store at startup — see
+  // `initSecrets()`, which needs safeStorage (post-ready) so it can't run here.
+  3: (prev) => {
+    const next = { ...DEFAULT_SETTINGS, ...(prev as object) } as StoredSettings
+    next.__schemaVersion = SCHEMA_VERSION
+    return next
+  },
+  // v4 → v5: added agentOrder + sidebarShortcut
+  4: (prev) => {
+    const next = { ...DEFAULT_SETTINGS, ...(prev as object) } as StoredSettings
+    next.agentOrder = []
+    next.sidebarShortcut = DEFAULT_SIDEBAR_SHORTCUT
     next.__schemaVersion = SCHEMA_VERSION
     return next
   }
@@ -64,12 +92,17 @@ function validate(settings: AppSettings): string[] {
     errors.push('terminalFontFamily must be a string')
   if (typeof settings.repoIndexEnabled !== 'boolean')
     errors.push('repoIndexEnabled must be a boolean')
+  if (typeof settings.passLaunchEnvToAgents !== 'boolean')
+    errors.push('passLaunchEnvToAgents must be a boolean')
   if (
     !settings.agentTabLabels ||
     typeof settings.agentTabLabels !== 'object' ||
     Array.isArray(settings.agentTabLabels)
   )
     errors.push('agentTabLabels must be an object')
+  if (!Array.isArray(settings.agentOrder)) errors.push('agentOrder must be an array')
+  if (typeof settings.sidebarShortcut !== 'string' || !normalizeShortcut(settings.sidebarShortcut))
+    errors.push('sidebarShortcut must be a shortcut like mod+b')
   return errors
 }
 
@@ -96,7 +129,10 @@ const SETTING_KEYS: (keyof AppSettings)[] = [
   'terminalFontFamily',
   'disabledBuiltinAgents',
   'repoIndexEnabled',
-  'agentTabLabels'
+  'agentTabLabels',
+  'passLaunchEnvToAgents',
+  'agentOrder',
+  'sidebarShortcut'
 ]
 
 class SettingsService {
@@ -115,7 +151,23 @@ class SettingsService {
       this.cache.rootFolders.filter((p) => typeof p === 'string' && p.length > 0)
     )
     this.cache.agentTabLabels = this.sanitizeLabels(this.cache.agentTabLabels)
+    this.cache.agentOrder = this.sanitizeAgentOrder(this.cache.agentOrder)
+    this.cache.sidebarShortcut =
+      normalizeShortcut(this.cache.sidebarShortcut) ?? DEFAULT_SIDEBAR_SHORTCUT
     this.persist()
+  }
+
+  private sanitizeAgentOrder(order: unknown): string[] {
+    if (!Array.isArray(order)) return []
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const id of order) {
+      if (typeof id === 'string' && id && !seen.has(id)) {
+        seen.add(id)
+        out.push(id)
+      }
+    }
+    return out
   }
 
   private sanitizeLabels(labels: unknown): Record<string, string> {
@@ -139,12 +191,66 @@ class SettingsService {
           typeof rec.command === 'string'
         )
       })
-      .map((a) => ({
+      .map((a) => {
+        const env = a.env && typeof a.env === 'object' && !Array.isArray(a.env)
+          ? (a.env as Record<string, string>)
+          : {}
+        return {
+          ...a,
+          args: Array.isArray(a.args) ? a.args.map(String) : [],
+          // Secret values live in the encrypted store, never in this plaintext
+          // file. Before the store is ready (i.e. during construction) leave
+          // the values in place so the post-ready migration can move them.
+          env: secretsService.isInit() ? stripSecretKeys(env) : env,
+          useShell: a.useShell !== false
+        }
+      })
+  }
+
+  /**
+   * Bring up the encrypted secrets store and move any secret-classified env
+   * values that are still sitting in this plaintext file into it. Call once,
+   * after `app.whenReady()` (safeStorage cannot be used earlier).
+   */
+  initSecrets(): void {
+    secretsService.init()
+    this.migrateSecrets()
+  }
+
+  private migrateSecrets(): void {
+    let changed = false
+    const agents = this.cache.customAgents.map((a) => {
+      const secretKeys = Object.keys(a.env ?? {}).filter(isSecretKey)
+      if (secretKeys.length === 0) return a
+      const merged = { ...secretsService.getAll(a.id) }
+      for (const k of secretKeys) {
+        const v = a.env?.[k]
+        if (v !== undefined && v !== SECRET_MASK) merged[k] = v
+      }
+      secretsService.replaceAll(a.id, merged)
+      changed = true
+      return { ...a, env: stripSecretKeys(a.env) }
+    })
+    if (changed) {
+      this.cache.customAgents = agents
+      this.persist()
+    }
+  }
+
+  /**
+   * Renderer-facing settings: secret env values are replaced with `SECRET_MASK`
+   * so they never cross IPC. `get()` stays raw for internal callers.
+   */
+  getRedacted(): AppSettings {
+    const settings = this.get()
+    return {
+      ...settings,
+      secretStorageEncrypted: secretsService.isEncryptionAvailable(),
+      customAgents: settings.customAgents.map((a) => ({
         ...a,
-        args: Array.isArray(a.args) ? a.args.map(String) : [],
-        env: a.env && typeof a.env === 'object' ? a.env : {},
-        useShell: a.useShell !== false
+        env: maskEnv(a.id, secretsService.isInit() ? a.env : stripSecretKeys(a.env))
       }))
+    }
   }
 
   private persist(): void {
@@ -172,6 +278,11 @@ class SettingsService {
     }
     next.customAgents = this.sanitizeAgents(next.customAgents)
     next.agentTabLabels = this.sanitizeLabels(next.agentTabLabels)
+    next.agentOrder = this.sanitizeAgentOrder(next.agentOrder)
+    if ('sidebarShortcut' in partial) {
+      next.sidebarShortcut =
+        normalizeShortcut(next.sidebarShortcut) ?? DEFAULT_SIDEBAR_SHORTCUT
+    }
     const errors = validate(next)
     if (errors.length > 0) {
       return { ok: false, error: errors.join('; ') }
